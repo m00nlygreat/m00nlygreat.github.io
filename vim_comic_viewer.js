@@ -254,10 +254,12 @@ var useDefault = ({
       return;
     }
     switch (event.key) {
+      case "j":
       case "x":
       case "ArrowDown":
         controller.goNext();
         break;
+      case "k":
       case "z":
       case "ArrowUp":
         controller.goPrevious();

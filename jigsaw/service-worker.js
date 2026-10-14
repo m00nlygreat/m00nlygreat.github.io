@@ -1,4 +1,4 @@
-const CACHE = 'jigsaw-shell-v39';
+const CACHE = 'jigsaw-shell-v40';
 const SHELL = [
   './', './index.html', './icon.svg', './manifest.webmanifest', './src/styles.css', './src/app.js',
   './src/domain/model.js', './src/domain/geometry.js', './src/domain/commands.js', './src/imaging/decode.js', './src/imaging/thumbnail.js',

@@ -53,6 +53,7 @@ let pendingImages = [];
 let alignDraft = null;
 let transformDraft = null;
 let layoutTransition = null;
+let snapGuides = null;
 let gesture = null;
 let pointerMap = new Map();
 let stateRevision = 0;
@@ -73,7 +74,7 @@ let exportBusy = false;
 const renderer = new CanvasRenderer(canvas, (assetId) => assets.get(assetId)?.bitmap);
 
 function refresh() {
-  renderer.draw({ document: documentModel, metadata: documentModel.assets, camera, selectedId, pending: pendingImages, alignDraft, transformDraft, layoutTransition });
+  renderer.draw({ document: documentModel, metadata: documentModel.assets, camera, selectedId, pending: pendingImages, alignDraft, transformDraft, layoutTransition, snapGuides });
   renderLayers();
   renderSelection();
   updateZoomLabels();
@@ -403,6 +404,48 @@ function getCanvasPosition(event) {
 
 function currentRootTransform(item) { return { x: item.x, y: item.y, scale: item.scale || 1, rotation: item.rotation || 0 }; }
 
+function closestSnap(sourceBounds, targetBounds, axis, tolerance) {
+  const sourceFeatures = axis === 'x'
+    ? [sourceBounds.left, (sourceBounds.left + sourceBounds.right) / 2, sourceBounds.right]
+    : [sourceBounds.top, (sourceBounds.top + sourceBounds.bottom) / 2, sourceBounds.bottom];
+  let closest = null;
+  for (const bounds of targetBounds) {
+    const targetFeatures = axis === 'x'
+      ? [bounds.left, (bounds.left + bounds.right) / 2, bounds.right]
+      : [bounds.top, (bounds.top + bounds.bottom) / 2, bounds.bottom];
+    for (const source of sourceFeatures) {
+      for (const target of targetFeatures) {
+        const delta = target - source;
+        const distance = Math.abs(delta);
+        if (distance <= tolerance && (!closest || distance < closest.distance)) closest = { delta, coordinate: target, distance };
+      }
+    }
+  }
+  return closest;
+}
+
+function snapTransformToImages(item, transform) {
+  const sourceBounds = worldBounds({ ...item, ...transform }, documentModel.assets);
+  if (!sourceBounds) return { transform, guides: null };
+  const targets = documentModel.items
+    .filter((target) => target.id !== item.id)
+    .map((target) => worldBounds(target, documentModel.assets))
+    .filter(Boolean);
+  if (!targets.length) return { transform, guides: null };
+
+  const tolerance = 8 / camera.zoom;
+  const horizontal = closestSnap(sourceBounds, targets, 'x', tolerance);
+  const vertical = closestSnap(sourceBounds, targets, 'y', tolerance);
+  return {
+    transform: {
+      ...transform,
+      x: transform.x + (horizontal?.delta || 0),
+      y: transform.y + (vertical?.delta || 0)
+    },
+    guides: horizontal || vertical ? { x: horizontal?.coordinate ?? null, y: vertical?.coordinate ?? null } : null
+  };
+}
+
 function canvasHandle(item, screen) {
   const bounds = worldBounds(item, documentModel.assets);
   if (!bounds) return null;
@@ -443,6 +486,7 @@ function onPointerDown(event) {
   if (pointerMap.size >= 2) {
     if (gesture?.type === 'move' || gesture?.type === 'resize' || gesture?.type === 'rotate') transformDraft = null;
     if (gesture?.type === 'align-move' && alignDraft) alignDraft.transform = { ...alignDraft.initialTransform };
+    snapGuides = null;
     canvas.classList.remove('dragging');
     const entries = [...pointerMap.values()];
     const midpoint = { x: (entries[0].x + entries[1].x) / 2, y: (entries[0].y + entries[1].y) / 2 };
@@ -506,19 +550,33 @@ function onPointerMove(event) {
     camera.x = gesture.anchor.x - (midpoint.x - renderer.width / 2) / camera.zoom;
     camera.y = gesture.anchor.y - (midpoint.y - renderer.height / 2) / camera.zoom;
     gesture.moved = true;
+    snapGuides = null;
     refresh();
     event.preventDefault();
     return;
   }
   const dx = screen.x - gesture.start.x, dy = screen.y - gesture.start.y;
   if (Math.hypot(dx, dy) > 2) gesture.moved = true;
+  snapGuides = null;
   if (gesture.type === 'pan') {
     camera.x = gesture.camera.x - dx / camera.zoom;
     camera.y = gesture.camera.y - dy / camera.zoom;
   } else if (gesture.type === 'move') {
-    transformDraft = { id: gesture.id, transform: { ...gesture.transform, x: gesture.transform.x + dx / camera.zoom, y: gesture.transform.y + dy / camera.zoom } };
+    const item = findRoot(documentModel, gesture.id);
+    if (item) {
+      const moved = { x: gesture.transform.x + dx / camera.zoom, y: gesture.transform.y + dy / camera.zoom, scale: gesture.transform.scale, rotation: gesture.transform.rotation };
+      const snapped = snapTransformToImages(item, moved);
+      transformDraft = { id: gesture.id, transform: snapped.transform };
+      snapGuides = snapped.guides;
+    }
   } else if (gesture.type === 'align-move') {
-    alignDraft.transform = { ...gesture.transform, x: gesture.transform.x + dx / camera.zoom, y: gesture.transform.y + dy / camera.zoom };
+    const item = findRoot(documentModel, gesture.id);
+    if (item) {
+      const moved = { x: gesture.transform.x + dx / camera.zoom, y: gesture.transform.y + dy / camera.zoom, scale: gesture.transform.scale, rotation: gesture.transform.rotation };
+      const snapped = snapTransformToImages(item, moved);
+      alignDraft.transform = snapped.transform;
+      snapGuides = snapped.guides;
+    }
   } else if (gesture.type === 'resize' || gesture.type === 'rotate') {
     const item = findRoot(documentModel, gesture.id);
     if (item) transformDraft = { id: item.id, transform: transformAtPointer(item, gesture.type, { ...gesture, shift: event.shiftKey }, screen) };
@@ -529,7 +587,8 @@ function onPointerMove(event) {
 
 function finishPointer(cancel = false) {
   const finished = gesture;
-  if (!finished) { pointerMap.clear(); return; }
+  snapGuides = null;
+  if (!finished) { pointerMap.clear(); refresh(); return; }
   gesture = null;
   pointerMap.clear();
   canvas.classList.remove('dragging');

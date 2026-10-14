@@ -35,7 +35,7 @@ export class CanvasRenderer {
   }
 
   draw(state) {
-    const { document: doc, metadata, camera, selectedId, pending = [], alignDraft, transformDraft, layoutTransition } = state;
+    const { document: doc, metadata, camera, selectedId, pending = [], alignDraft, transformDraft, layoutTransition, snapGuides } = state;
     this.currentCamera = camera;
     const context = this.context;
     const dpr = this.dpr;
@@ -76,6 +76,7 @@ export class CanvasRenderer {
       context.strokeRect(x, y, image.width, image.height);
       context.restore();
     }
+    this.drawSnapGuides(context, snapGuides, camera);
     const selected = doc.items.find((item) => item.id === selectedId);
     const selectedTransition = selected && layoutTransition?.items.get(selected.id);
     const selectedTransitionTransform = selectedTransition ? interpolateTransform(selectedTransition.from, selectedTransition.to, layoutTransition.progress) : null;
@@ -161,6 +162,28 @@ export class CanvasRenderer {
     const rotationX = x + width / 2, rotationY = y - 23;
     context.strokeStyle = selectionColor; context.beginPath(); context.moveTo(rotationX, y); context.lineTo(rotationX, rotationY); context.stroke();
     context.fillStyle = handleFill; context.beginPath(); context.arc(rotationX, rotationY, 5, 0, Math.PI * 2); context.fill(); context.stroke();
+    context.restore();
+  }
+
+  drawSnapGuides(context, guides, camera) {
+    if (!guides) return;
+    context.save();
+    context.setTransform(this.dpr, 0, 0, this.dpr, 0, 0);
+    context.strokeStyle = globalThis.matchMedia?.('(forced-colors: active)').matches ? 'CanvasText' : '#ff6f91';
+    context.lineWidth = 1;
+    context.setLineDash([]);
+    context.beginPath();
+    if (guides.x !== null) {
+      const x = this.toScreen(guides.x, camera.y, camera).x;
+      context.moveTo(x, 0);
+      context.lineTo(x, this.height);
+    }
+    if (guides.y !== null) {
+      const y = this.toScreen(camera.x, guides.y, camera).y;
+      context.moveTo(0, y);
+      context.lineTo(this.width, y);
+    }
+    context.stroke();
     context.restore();
   }
 

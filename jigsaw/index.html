@@ -1,0 +1,115 @@
+<!doctype html>
+<html lang="ko">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <meta name="theme-color" content="#16171a" />
+    <meta name="description" content="이미지를 이 기기에서 스티칭하고 편집하세요." />
+    <link rel="icon" href="./icon.svg" type="image/svg+xml" />
+    <link rel="manifest" href="./manifest.webmanifest" />
+    <link rel="stylesheet" href="./src/styles.css" />
+    <title>Stitchboard · 이미지 스티칭</title>
+  </head>
+  <body>
+    <main class="app-shell">
+      <header class="topbar">
+        <div class="brand" aria-label="Stitchboard">
+          <span class="brand-mark" aria-hidden="true"><i></i><i></i><i></i></span>
+          <span>Stitchboard</span>
+        </div>
+        <div id="status-banner" class="status-banner" role="status" aria-live="polite">
+          <span class="status-dot" aria-hidden="true"></span>
+          <span id="status-text">이 기기에서 작업합니다</span>
+        </div>
+        <div class="top-actions">
+          <button id="update-button" class="icon-button hidden" type="button" aria-label="앱 업데이트 적용">업데이트</button>
+          <button id="install-button" class="icon-button hidden" type="button" aria-label="앱 설치">앱 설치</button>
+          <button id="help-button" class="icon-button" type="button" aria-label="도움말">도움말</button>
+        </div>
+      </header>
+
+      <div class="workspace">
+        <section id="canvas-frame" class="canvas-frame" aria-label="이미지 작업 캔버스">
+          <canvas id="canvas" aria-label="이미지와 스티칭 그룹이 표시되는 캔버스"></canvas>
+          <div id="empty-state" class="empty-state">
+            <div class="empty-art" aria-hidden="true">
+              <span></span><span></span><span></span>
+            </div>
+            <h1>겹치는 이미지를 가져오세요</h1>
+            <p>겹치는 부분을 찾아 그룹으로 만들고, 작업은 이 기기에 저장합니다.</p>
+            <div class="empty-actions">
+              <button id="empty-import" class="primary-button" type="button">이미지 가져오기</button>
+              <button id="sample-button" class="secondary-button" type="button">샘플 체험</button>
+            </div>
+            <div class="empty-shortcuts"><span><kbd>Ctrl</kbd> + <kbd>스크롤</kbd> 확대</span><span><kbd>Space</kbd> + 드래그 이동</span></div>
+          </div>
+          <div id="drop-overlay" class="drop-overlay" aria-hidden="true">
+            <strong>이미지를 놓아 가져오기</strong><span>파일은 이 기기에서 처리됩니다</span>
+          </div>
+          <div id="processing-card" class="processing-card hidden" role="status" aria-live="polite">
+            <span class="spinner" aria-hidden="true"></span>
+            <div><strong id="processing-title">이미지를 읽는 중</strong><span id="processing-detail">진행 상태를 준비하고 있습니다</span></div>
+            <button id="dismiss-processing" class="quiet-button" type="button">닫기</button>
+          </div>
+          <div id="align-hint" class="align-hint hidden" role="status" aria-live="polite"></div>
+          <div id="canvas-zoom" class="canvas-zoom" aria-live="polite">100%</div>
+        </section>
+
+        <aside id="sidebar" class="sidebar" aria-label="레이어 패널">
+          <div class="sidebar-heading">
+            <div><h2>레이어</h2><span id="layer-count" class="count-badge">0</span></div>
+            <button id="close-layers" class="small-icon-button" type="button" aria-label="레이어 패널 닫기">×</button>
+          </div>
+          <p class="layer-order-note">목록 위쪽이 캔버스 앞쪽입니다</p>
+          <div id="layer-list" class="layer-list" role="tree" aria-label="이미지 레이어"></div>
+          <div id="empty-layers" class="empty-layers">가져온 이미지와 스티칭 그룹이 여기에 표시됩니다.</div>
+        </aside>
+      </div>
+
+      <section id="selection-dock" class="selection-dock hidden" aria-label="선택 항목 조작">
+        <div class="selection-summary"><strong id="selection-name">선택 항목</strong><span id="selection-meta"></span></div>
+        <div class="selection-values"><span>X <b id="value-x">0</b></span><span>Y <b id="value-y">0</b></span><span>크기 <b id="value-scale">100%</b></span><span>회전 <b id="value-rotation">0°</b></span></div>
+        <div class="selection-actions">
+          <button id="align-button" class="secondary-button compact" type="button">수동 정렬</button>
+          <button id="reset-transform" class="secondary-button compact" type="button">변형 초기화</button>
+          <button id="ungroup-button" class="secondary-button compact" type="button">그룹 해제</button>
+          <button id="delete-button" class="danger-button compact" type="button">삭제</button>
+        </div>
+      </section>
+
+      <nav class="toolbar" aria-label="캔버스 도구">
+        <div class="tool-group">
+          <button id="select-tool" class="tool-button active" type="button" aria-label="선택 도구 (V)" aria-pressed="true" title="선택 (V)">↖</button>
+          <button id="pan-tool" class="tool-button" type="button" aria-label="이동 도구 (H)" aria-pressed="false" title="이동 (H)">✋</button>
+          <span class="tool-divider"></span>
+          <button id="zoom-out" class="tool-button" type="button" aria-label="축소">−</button>
+          <span id="zoom-label" class="zoom-label">100%</span>
+          <button id="zoom-in" class="tool-button" type="button" aria-label="확대">+</button>
+          <button id="zoom-100" class="tool-button text-tool" type="button" aria-label="확대율 100%">100%</button>
+          <button id="fit-all" class="tool-button" type="button" aria-label="전체 보기 (F)">⛶</button>
+        </div>
+        <div class="tool-group tool-group-right">
+          <button id="layers-toggle" class="tool-button layers-button active" type="button" aria-label="레이어 패널 (L)" aria-pressed="true">▱ <span>레이어</span></button>
+          <button id="save-status" class="save-status" type="button" aria-label="저장 상태">저장 전</button>
+          <button id="export-png" class="export-button" type="button" aria-label="PNG 내보내기">↓ <span>PNG</span></button>
+          <button id="export-jpg" class="export-button secondary-export" type="button" aria-label="JPG 내보내기">JPG</button>
+          <button id="import-button" class="import-tool" type="button" aria-label="이미지 가져오기">＋ <span>이미지</span></button>
+        </div>
+      </nav>
+
+      <input id="file-input" class="visually-hidden" type="file" accept="image/png,image/jpeg,image/webp,image/gif" aria-label="이미지 파일 선택" multiple />
+      <div id="toast-region" class="toast-region" aria-live="polite" aria-atomic="true"></div>
+
+      <dialog id="help-dialog" class="help-dialog">
+        <form method="dialog">
+          <div class="dialog-heading"><h2>Stitchboard 사용 안내</h2><button class="small-icon-button" aria-label="닫기">×</button></div>
+          <p>이미지를 가져오면 겹침을 찾아 이 기기 안에서 자동으로 정렬합니다. 정렬을 확신할 수 없는 이미지는 별도로 남습니다.</p>
+          <dl><dt>캔버스 이동</dt><dd>빈 곳 드래그, Space + 드래그, 또는 H 도구</dd><dt>확대·축소</dt><dd>Ctrl/Cmd + 스크롤 또는 도구 모음</dd><dt>레이어 순서</dt><dd>[ / ] 키 또는 레이어의 앞·뒤 버튼</dd><dt>키보드 이동</dt><dd>방향키 1px, Shift + 방향키 10px</dd><dt>크기 조절</dt><dd>선택 항목에서 + / − 키로 5%씩 조절</dd><dt>회전</dt><dd>Q / E 키로 1°, Shift + Q / E 키로 15° 회전</dd></dl>
+          <p class="muted">원본 파일은 바꾸지 않고 브라우저 저장소에 보관합니다. 브라우저 데이터를 지우면 작업도 삭제될 수 있습니다.</p>
+          <button class="primary-button dialog-done" type="submit">확인</button>
+        </form>
+      </dialog>
+    </main>
+    <script type="module" src="./src/app.js"></script>
+  </body>
+</html>

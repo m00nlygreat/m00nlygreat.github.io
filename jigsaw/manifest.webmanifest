@@ -1,0 +1,15 @@
+{
+  "id": "./",
+  "name": "Stitchboard 이미지 스티칭",
+  "short_name": "Stitchboard",
+  "description": "겹치는 이미지를 이 기기에서 스티칭하고 편집합니다.",
+  "lang": "ko",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "background_color": "#16171a",
+  "theme_color": "#16171a",
+  "icons": [
+    { "src": "./icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any maskable" }
+  ]
+}

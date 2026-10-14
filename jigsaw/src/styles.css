@@ -140,13 +140,9 @@ kbd { padding: 2px 6px; border: 0; border-radius: 5px; color: var(--text); backg
 .zoom-label { width: 52px; min-width: 52px; color: #c2c3ca; font: 400 10px/1 var(--font-mono); }
 .layers-button { width: auto; min-width: 82px; padding: 0 14px 0 11px; gap: 8px; font-size: 13px; }
 .layers-button span { font-size: 13px; font-weight: 500; }
-.save-status { display: inline-flex; flex: 0 0 auto; align-items: center; min-width: 70px; min-height: 40px; padding: 7px 6px; border: 0; border-radius: 6px; color: #aeb0b8; background: transparent; font: 400 10px/1.2 var(--font-mono); cursor: pointer; white-space: nowrap; gap: 6px; }
+.save-status-wrap { display: contents; }
+.save-status { display: inline-flex; flex: 0 0 auto; align-items: center; min-width: 70px; min-height: 40px; padding: 7px 6px; border: 0; border-radius: 6px; color: #ffaaa4; background: transparent; font: 400 10px/1.2 var(--font-mono); cursor: pointer; white-space: nowrap; gap: 6px; }
 .save-status::before { width: 6px; height: 6px; border-radius: 50%; background: #6e727a; content: ""; flex: 0 0 auto; }
-.save-status[data-tone="saved"] { color: #8fc7a7; }
-.save-status[data-tone="saved"]::before { background: #4cc38a; }
-.save-status[data-tone="dirty"] { color: #aeb0b8; }
-.save-status[data-tone="saving"] { color: #b8c8ea; }
-.save-status[data-tone="saving"]::before { background: #9bb3e0; }
 .save-status[data-tone="error"] { color: #ffaaa4; }
 .save-status[data-tone="error"]::before { background: #ff6b6b; }
 .save-status:disabled { cursor: default; }
@@ -298,4 +294,3 @@ kbd { padding: 2px 6px; border: 0; border-radius: 5px; color: var(--text); backg
   .tool-group-right .save-status { min-height: 44px; }
   .selection-actions .compact { min-height: 40px; }
 }
-

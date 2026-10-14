@@ -4,22 +4,22 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
     <meta name="theme-color" content="#16171a" />
-    <meta name="description" content="이미지를 이 기기에서 스티칭하고 편집하세요." />
+    <meta name="description" content="이미지를 자동으로 스티칭하고 편집하세요." />
     <link rel="icon" href="./icon.svg" type="image/svg+xml" />
     <link rel="manifest" href="./manifest.webmanifest" />
     <link rel="stylesheet" href="./src/styles.css" />
-    <title>Stitchboard · 이미지 스티칭</title>
+    <title>Jigsaw · 이미지 스티칭</title>
   </head>
   <body>
     <main class="app-shell">
       <header class="topbar">
-        <div class="brand" aria-label="Stitchboard">
+        <div class="brand" aria-label="Jigsaw">
           <span class="brand-mark" aria-hidden="true"><i></i><i></i><i></i></span>
-          <span>Stitchboard</span>
+          <span>Jigsaw</span>
         </div>
-        <div id="status-banner" class="status-banner" role="status" aria-live="polite">
+        <div id="status-banner" class="status-banner hidden" role="status" aria-live="polite">
           <span class="status-dot" aria-hidden="true"></span>
-          <span id="status-text">이 기기에서 작업합니다</span>
+          <span id="status-text"></span>
         </div>
         <div class="top-actions">
           <button id="update-button" class="icon-button hidden" type="button" aria-label="앱 업데이트 적용">업데이트</button>
@@ -36,7 +36,7 @@
               <span></span><span></span><span></span>
             </div>
             <h1>겹치는 이미지를 가져오세요</h1>
-            <p>겹치는 부분을 찾아 그룹으로 만들고, 작업은 이 기기에 저장합니다.</p>
+            <p>이미지를 붙여넣거나 가져오세요. 겹치는 부분은 자동으로 정렬합니다.</p>
             <div class="empty-actions">
               <button id="empty-import" class="primary-button" type="button">이미지 가져오기</button>
               <button id="sample-button" class="secondary-button" type="button">샘플 체험</button>
@@ -44,7 +44,7 @@
             <div class="empty-shortcuts"><span><kbd>Ctrl</kbd> + <kbd>스크롤</kbd> 확대</span><span><kbd>Space</kbd> + 드래그 이동</span></div>
           </div>
           <div id="drop-overlay" class="drop-overlay" aria-hidden="true">
-            <strong>이미지를 놓아 가져오기</strong><span>파일은 이 기기에서 처리됩니다</span>
+            <strong>이미지를 놓아 가져오기</strong><span>또는 Ctrl/Cmd + V로 붙여넣기</span>
           </div>
           <div id="processing-card" class="processing-card hidden" role="status" aria-live="polite">
             <span class="spinner" aria-hidden="true"></span>
@@ -92,8 +92,10 @@
         <div class="tool-group tool-group-right">
           <span class="tool-divider"></span>
           <button id="layers-toggle" class="tool-button layers-button active" type="button" aria-label="레이어 패널 (L)" aria-pressed="true"><svg aria-hidden="true" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linejoin="round"><path d="M12 3.5l9 5-9 5-9-5z"></path><path d="M3 13.5l9 5 9-5"></path></svg><span>레이어</span></button>
-          <span class="tool-divider"></span>
-          <button id="save-status" class="save-status" type="button" aria-label="저장 상태">저장 전</button>
+          <div id="save-status-wrap" class="save-status-wrap hidden" aria-live="polite">
+            <span class="tool-divider"></span>
+            <button id="save-status" class="save-status" type="button" aria-label="저장 다시 시도">저장 실패</button>
+          </div>
           <span class="tool-divider"></span>
           <div class="export-wrap">
             <button id="export-toggle" class="export-button" type="button" aria-label="내보내기 형식 선택" aria-haspopup="menu" aria-expanded="false" aria-controls="export-menu"><svg aria-hidden="true" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 4v11M7 10l5 5 5-5M5 20h14"></path></svg><span>내보내기</span></button>
@@ -111,10 +113,9 @@
 
       <dialog id="help-dialog" class="help-dialog">
         <form method="dialog">
-          <div class="dialog-heading"><h2>Stitchboard 사용 안내</h2><button class="small-icon-button" aria-label="닫기">×</button></div>
-          <p>이미지를 가져오면 겹침을 찾아 이 기기 안에서 자동으로 정렬합니다. 정렬을 확신할 수 없는 이미지는 별도로 남습니다.</p>
-          <dl><dt>캔버스 이동</dt><dd>빈 곳 드래그, Space + 드래그, 또는 H 도구</dd><dt>확대·축소</dt><dd>Ctrl/Cmd + 스크롤 또는 도구 모음</dd><dt>레이어 순서</dt><dd>[ / ] 키 또는 레이어의 앞·뒤 버튼</dd><dt>키보드 이동</dt><dd>방향키 1px, Shift + 방향키 10px</dd><dt>크기 조절</dt><dd>선택 항목에서 + / − 키로 5%씩 조절</dd><dt>회전</dt><dd>Q / E 키로 1°, Shift + Q / E 키로 15° 회전</dd></dl>
-          <p class="muted">원본 파일은 바꾸지 않고 브라우저 저장소에 보관합니다. 브라우저 데이터를 지우면 작업도 삭제될 수 있습니다.</p>
+          <div class="dialog-heading"><h2>Jigsaw 사용 안내</h2><button class="small-icon-button" aria-label="닫기">×</button></div>
+          <p>이미지를 가져오면 겹침을 찾아 자동으로 정렬합니다. 정렬을 확신할 수 없는 이미지는 별도로 남습니다.</p>
+          <dl><dt>이미지 붙여넣기</dt><dd>Ctrl/Cmd + V</dd><dt>캔버스 이동</dt><dd>빈 곳 드래그, Space + 드래그, 또는 H 도구</dd><dt>확대·축소</dt><dd>Ctrl/Cmd + 스크롤 또는 도구 모음</dd><dt>레이어 순서</dt><dd>[ / ] 키 또는 레이어의 앞·뒤 버튼</dd><dt>키보드 이동</dt><dd>방향키 1px, Shift + 방향키 10px</dd><dt>크기 조절</dt><dd>선택 항목에서 + / − 키로 5%씩 조절</dd><dt>회전</dt><dd>Q / E 키로 1°, Shift + Q / E 키로 15° 회전</dd></dl>
           <button class="primary-button dialog-done" type="submit">확인</button>
         </form>
       </dialog>

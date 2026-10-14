@@ -27,7 +27,7 @@ import { createPersistenceSnapshot } from './persistence/snapshot.js';
 import { captureViewState, restoreViewState } from './persistence/view-state.js';
 import { applyWaitingUpdate } from './pwa/update.js';
 import { createStitchingService } from './stitching/service.js';
-import { isInteractiveTarget, shouldIgnoreKeyboardShortcuts } from './input/keyboard.js';
+import { isInteractiveTarget, isTextEditingTarget, shouldIgnoreKeyboardShortcuts } from './input/keyboard.js';
 
 const byId = (id) => document.getElementById(id);
 const canvas = byId('canvas');
@@ -94,6 +94,7 @@ function markChanged(documentChanged = false) {
 
 function setStatus(message, tone = 'normal') {
   renderStatus(byId('status-banner'), byId('status-text'), message, tone);
+  byId('status-banner').classList.toggle('hidden', !message);
 }
 
 function showToast(message, tone = 'normal', duration = 5200) {
@@ -102,9 +103,10 @@ function showToast(message, tone = 'normal', duration = 5200) {
 
 function saveIndicator(label, tone = 'normal') {
   const button = byId('save-status');
+  byId('save-status-wrap').classList.toggle('hidden', tone !== 'error');
   renderSaveIndicator(button, label, tone);
   button.setAttribute('aria-label', restoreFailed ? '저장된 작업 복원 다시 시도'
-    : persistenceError ? '작업 저장 다시 시도' : `저장 상태: ${label}`);
+    : '작업 저장 다시 시도');
 }
 
 function viewSnapshot() {
@@ -142,9 +144,10 @@ async function persistNow() {
     await saveQueue;
     if (targetRevision === stateRevision) {
       savedRevision = targetRevision;
+      const clearedSaveError = Boolean(persistenceError);
       persistenceError = null;
-      saveIndicator('기기에 저장됨', 'saved');
-      setStatus('기기에 저장됨', 'normal');
+      saveIndicator('', 'saved');
+      if (clearedSaveError) setStatus('', 'normal');
     } else {
       saveIndicator('저장 전', 'dirty');
       scheduleSave(true);
@@ -663,6 +666,32 @@ function nudgeSelection(dx, dy) {
 
 function openFilePicker() { fileInput.click(); }
 
+function pastedImageFile(file, index, timestamp) {
+  if (!file) return null;
+  if (file.name) return file;
+  const extension = ({ 'image/png': 'png', 'image/jpeg': 'jpg', 'image/webp': 'webp', 'image/gif': 'gif' })[file.type.toLowerCase()] || 'img';
+  return new File([file], `pasted-image-${timestamp}-${index + 1}.${extension}`, {
+    type: file.type,
+    lastModified: file.lastModified || timestamp
+  });
+}
+
+function onPaste(event) {
+  if (event.defaultPrevented || byId('help-dialog').open) return;
+  if (event.target !== fileInput && isTextEditingTarget(event.target)) return;
+  const clipboard = event.clipboardData;
+  const items = [...(clipboard?.items || [])];
+  const images = items.filter((item) => item.kind === 'file' && item.type.toLowerCase().startsWith('image/'));
+  const timestamp = Date.now();
+  let candidates = images.map((item) => item.getAsFile()).filter(Boolean);
+  if (!candidates.length) candidates = [...(clipboard?.files || [])].filter((file) => file.type.toLowerCase().startsWith('image/'));
+  if (!candidates.length) return;
+  const files = candidates.map((file, index) => pastedImageFile(file, index, timestamp)).filter(Boolean);
+  if (!files.length) return;
+  event.preventDefault();
+  enqueueFiles(files);
+}
+
 function setExportMenu(open) {
   byId('export-menu').classList.toggle('hidden', !open);
   byId('export-toggle').setAttribute('aria-expanded', String(open));
@@ -840,7 +869,7 @@ async function exportImage(format) {
     const output = await renderExport(snapshot, snapshot.assets, (id) => assets.get(id)?.bitmap, format);
     const extension = format === 'image/png' ? 'png' : 'jpg';
     const timestamp = new Date().toISOString().replace(/[-:]/g, '').replace('T', '-').slice(0, 15);
-    deliverBlob(output.blob, `stitchboard-${timestamp}.${extension}`);
+    deliverBlob(output.blob, `jigsaw-${timestamp}.${extension}`);
     const summary = `${extension.toUpperCase()} 내보내기 완료 · ${output.width.toLocaleString()} × ${output.height.toLocaleString()}px`;
     setStatus(summary, 'normal'); showToast(summary, 'normal', 7000);
   } catch (error) {
@@ -932,6 +961,7 @@ function registerEvents() {
   });
   byId('dismiss-processing').addEventListener('click', () => { processingHidden = true; processingCard.classList.add('hidden'); });
   fileInput.addEventListener('change', () => { const files = [...(fileInput.files || [])]; fileInput.value = ''; enqueueFiles(files); });
+  window.addEventListener('paste', onPaste);
   layerList.addEventListener('click', onLayerClick);
   layerList.addEventListener('dragstart', (event) => {
     const row = event.target.closest('.layer-row'); if (!row) return;
@@ -972,7 +1002,7 @@ function registerEvents() {
   window.addEventListener('keyup', (event) => { if (event.code === 'Space') { spaceDown = false; canvas.classList.toggle('pan-cursor', activeTool === 'pan'); } });
   window.addEventListener('blur', () => { spaceDown = false; if (gesture) finishPointer(true); canvas.classList.toggle('pan-cursor', activeTool === 'pan'); });
   window.addEventListener('beforeinstallprompt', (event) => { event.preventDefault(); installPrompt = event; byId('install-button').classList.remove('hidden'); });
-  window.addEventListener('appinstalled', () => { installPrompt = null; byId('install-button').classList.add('hidden'); showToast('Stitchboard를 설치했습니다.'); });
+  window.addEventListener('appinstalled', () => { installPrompt = null; byId('install-button').classList.add('hidden'); showToast('Jigsaw를 설치했습니다.'); });
   new ResizeObserver(() => { finishLayoutTransition(); renderer.resize(); refresh(); }).observe(byId('canvas-frame'));
 }
 
@@ -981,7 +1011,7 @@ async function restore() {
   let committed = false;
   try {
     const record = await store.load();
-    if (!record) { setStatus('이 기기에서 작업합니다', 'normal'); saveIndicator('저장 전', 'dirty'); scheduleSave(); return; }
+    if (!record) { saveIndicator('', 'dirty'); scheduleSave(); return; }
     for (const item of record.assets) {
       const bitmap = await createImageBitmap(item.blob, { imageOrientation: 'from-image' });
       const asset = { blob: item.blob, bitmap, previewUrl: null };
@@ -1008,8 +1038,8 @@ async function restore() {
     stateRevision = Number.isSafeInteger(record.stateRevision) ? record.stateRevision : documentModel.revision;
     savedRevision = stateRevision;
     sidebar.classList.toggle('closed', !panelOpen);
-    saveIndicator('기기에 저장됨', 'saved');
-    setStatus('이 기기의 작업을 복원했습니다', 'normal');
+    saveIndicator('', 'saved');
+    setStatus('', 'normal');
   } catch (error) {
     if (!committed) {
       for (const asset of restored.values()) {
@@ -1033,7 +1063,7 @@ async function registerServiceWorker() {
     const offerUpdate = () => {
       if (!serviceWorkerRegistration.waiting || !navigator.serviceWorker.controller) return;
       byId('update-button').classList.remove('hidden');
-      setStatus('앱 업데이트가 준비되었습니다. 저장한 뒤 적용할 수 있습니다.', 'normal');
+      setStatus('앱 업데이트가 준비되었습니다.', 'normal');
     };
     serviceWorkerRegistration.addEventListener('updatefound', () => {
       const installing = serviceWorkerRegistration.installing;
@@ -1065,20 +1095,20 @@ async function applyAppUpdate() {
         const message = '저장된 작업 확인이 끝난 뒤 업데이트할 수 있습니다. 기존 저장본은 보존했습니다.';
         setStatus(message, 'error'); showToast(message, 'error', 0);
       } else if (persistenceError) {
-        const message = '저장에 실패해 업데이트를 미뤘습니다. 저장 상태를 눌러 재시도해 주세요.';
+        const message = '저장에 실패해 업데이트를 미뤘습니다. 저장 오류 버튼을 눌러 다시 시도해 주세요.';
         setStatus(message, 'error'); showToast(message, 'error', 0);
       } else {
-        const message = '진행 중인 작업을 마치고 저장한 뒤 업데이트할 수 있습니다.';
+        const message = '진행 중인 작업을 마친 뒤 업데이트할 수 있습니다.';
         setStatus(message, 'warning'); showToast('진행 중인 작업이 끝나면 다시 업데이트를 적용해 주세요.', 'warning', 8000);
       }
       return;
     }
-    setStatus('작업을 저장했습니다. 앱을 업데이트합니다.', 'busy');
+    setStatus('앱을 업데이트합니다.', 'busy');
   } catch (error) {
     updateReloadRequested = false;
     button.disabled = false;
     setStatus(`업데이트를 미뤘습니다: ${error.message || '작업을 저장하지 못했습니다'}`, 'error');
-    showToast('저장에 성공한 뒤 다시 업데이트를 적용해 주세요.', 'error', 0);
+    showToast('저장 오류를 해결한 뒤 다시 업데이트를 적용해 주세요.', 'error', 0);
   }
 }
 

@@ -1,8 +1,8 @@
 {
   "id": "./",
-  "name": "Stitchboard 이미지 스티칭",
-  "short_name": "Stitchboard",
-  "description": "겹치는 이미지를 이 기기에서 스티칭하고 편집합니다.",
+  "name": "Jigsaw 이미지 스티칭",
+  "short_name": "Jigsaw",
+  "description": "겹치는 이미지를 자동으로 스티칭하고 편집합니다.",
   "lang": "ko",
   "start_url": "./",
   "scope": "./",

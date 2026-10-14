@@ -116,4 +116,3 @@ export function renderLayerList({ documentModel, assets, selectedId, layerFocusI
     target?.focus({ preventScroll: true });
   }
 }
-

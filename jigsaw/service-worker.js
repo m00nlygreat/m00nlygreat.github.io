@@ -1,4 +1,4 @@
-const CACHE = 'stitchboard-shell-v38';
+const CACHE = 'jigsaw-shell-v39';
 const SHELL = [
   './', './index.html', './icon.svg', './manifest.webmanifest', './src/styles.css', './src/app.js',
   './src/domain/model.js', './src/domain/geometry.js', './src/domain/commands.js', './src/imaging/decode.js', './src/imaging/thumbnail.js',
@@ -18,7 +18,7 @@ self.addEventListener('message', (event) => {
 });
 
 self.addEventListener('activate', (event) => {
-  event.waitUntil(caches.keys().then((keys) => Promise.all(keys.filter((key) => key.startsWith('stitchboard-shell-') && key !== CACHE).map((key) => caches.delete(key)))).then(() => self.clients.claim()));
+  event.waitUntil(caches.keys().then((keys) => Promise.all(keys.filter((key) => (key.startsWith('stitchboard-shell-') || key.startsWith('jigsaw-shell-')) && key !== CACHE).map((key) => caches.delete(key)))).then(() => self.clients.claim()));
 });
 
 self.addEventListener('fetch', (event) => {
@@ -32,4 +32,3 @@ self.addEventListener('fetch', (event) => {
     return response;
   })));
 });
-

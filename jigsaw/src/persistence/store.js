@@ -1,4 +1,5 @@
-const DATABASE_NAME = 'stitchboard.local';
+const DATABASE_NAME = 'jigsaw.local';
+const LEGACY_DATABASE_NAME = 'stitchboard.local';
 const DATABASE_VERSION = 1;
 const STORE_NAME = 'snapshots';
 const SNAPSHOT_KEY = 'current';
@@ -8,6 +9,42 @@ function requestResult(request) {
     request.onsuccess = () => resolve(request.result);
     request.onerror = () => reject(request.error || new Error('저장소 요청에 실패했습니다.'));
   });
+}
+
+function openExistingDatabase(name) {
+  return new Promise((resolve, reject) => {
+    const request = indexedDB.open(name);
+    let abortedCreation = false;
+    request.onupgradeneeded = (event) => {
+      if (event.oldVersion !== 0) return;
+      abortedCreation = true;
+      request.transaction.abort();
+    };
+    request.onsuccess = () => {
+      if (!abortedCreation) return resolve(request.result);
+      request.result.close();
+      resolve(null);
+    };
+    request.onerror = () => {
+      if (abortedCreation && request.error?.name === 'AbortError') return resolve(null);
+      reject(request.error || new Error('이전 작업 저장소를 열지 못했습니다.'));
+    };
+    request.onblocked = () => reject(new Error('다른 창에서 이전 작업 저장소를 사용 중입니다.'));
+  });
+}
+
+async function readSnapshot(database) {
+  if (!database.objectStoreNames.contains(STORE_NAME)) return null;
+  const transaction = database.transaction(STORE_NAME, 'readonly');
+  return requestResult(transaction.objectStore(STORE_NAME).get(SNAPSHOT_KEY));
+}
+
+function validateSnapshot(record) {
+  if (record.schemaVersion !== 1 || !record.document || record.document.schemaVersion !== 1) {
+    throw new Error('저장된 작업의 버전을 해석할 수 없습니다. 기존 데이터는 그대로 보존했습니다.');
+  }
+  if (!Array.isArray(record.assets) || !record.view) throw new Error('저장된 작업 일부를 읽을 수 없습니다. 기존 데이터는 그대로 보존했습니다.');
+  return record;
 }
 
 export class LocalStore {
@@ -36,14 +73,17 @@ export class LocalStore {
 
   async load() {
     const database = await this.open();
-    const transaction = database.transaction(STORE_NAME, 'readonly');
-    const record = await requestResult(transaction.objectStore(STORE_NAME).get(SNAPSHOT_KEY));
-    if (!record) return null;
-    if (record.schemaVersion !== 1 || !record.document || record.document.schemaVersion !== 1) {
-      throw new Error('저장된 작업의 버전을 해석할 수 없습니다. 기존 데이터는 그대로 보존했습니다.');
-    }
-    if (!Array.isArray(record.assets) || !record.view) throw new Error('저장된 작업 일부를 읽을 수 없습니다. 기존 데이터는 그대로 보존했습니다.');
-    return record;
+    const currentRecord = await readSnapshot(database);
+    if (currentRecord) return validateSnapshot(currentRecord);
+    const legacyDatabase = await openExistingDatabase(LEGACY_DATABASE_NAME);
+    if (!legacyDatabase) return null;
+    let legacyRecord;
+    try { legacyRecord = await readSnapshot(legacyDatabase); }
+    finally { legacyDatabase.close(); }
+    if (!legacyRecord) return null;
+    validateSnapshot(legacyRecord);
+    await this.save(legacyRecord);
+    return legacyRecord;
   }
 
   async save(record) {

@@ -52,17 +52,16 @@
             <button id="dismiss-processing" class="quiet-button" type="button">닫기</button>
           </div>
           <div id="align-hint" class="align-hint hidden" role="status" aria-live="polite"></div>
-          <div id="canvas-zoom" class="canvas-zoom" aria-live="polite">100%</div>
+          <div id="canvas-zoom" class="visually-hidden" aria-live="polite">100%</div>
         </section>
 
         <aside id="sidebar" class="sidebar" aria-label="레이어 패널">
           <div class="sidebar-heading">
             <div><h2>레이어</h2><span id="layer-count" class="count-badge">0</span></div>
-            <button id="close-layers" class="small-icon-button" type="button" aria-label="레이어 패널 닫기">×</button>
+            <span class="layer-front">앞쪽 ↑</span>
           </div>
-          <p class="layer-order-note">목록 위쪽이 캔버스 앞쪽입니다</p>
-          <div id="layer-list" class="layer-list" role="tree" aria-label="이미지 레이어"></div>
           <div id="empty-layers" class="empty-layers">가져온 이미지와 스티칭 그룹이 여기에 표시됩니다.</div>
+          <div id="layer-list" class="layer-list" role="tree" aria-label="이미지 레이어"></div>
         </aside>
       </div>
 
@@ -72,28 +71,38 @@
         <div class="selection-actions">
           <button id="align-button" class="secondary-button compact" type="button">수동 정렬</button>
           <button id="reset-transform" class="secondary-button compact" type="button">변형 초기화</button>
-          <button id="ungroup-button" class="secondary-button compact" type="button">그룹 해제</button>
-          <button id="delete-button" class="danger-button compact" type="button">삭제</button>
         </div>
       </section>
 
       <nav class="toolbar" aria-label="캔버스 도구">
         <div class="tool-group">
-          <button id="select-tool" class="tool-button active" type="button" aria-label="선택 도구 (V)" aria-pressed="true" title="선택 (V)">↖</button>
-          <button id="pan-tool" class="tool-button" type="button" aria-label="이동 도구 (H)" aria-pressed="false" title="이동 (H)">✋</button>
+          <button id="select-tool" class="tool-button active" type="button" aria-label="선택 도구 (V)" aria-pressed="true" title="선택 (V)"><svg aria-hidden="true" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M4.5 3.5l6.2 16 2.3-6.7 6.7-2.3z"></path></svg></button>
+          <button id="pan-tool" class="tool-button" type="button" aria-label="이동 도구 (H)" aria-pressed="false" title="이동 (H, 또는 Space 누르기)"><svg aria-hidden="true" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M18 11V6a2 2 0 0 0-4 0v5"></path><path d="M14 10V4a2 2 0 0 0-4 0v6"></path><path d="M10 10.5V6a2 2 0 0 0-4 0v8"></path><path d="M18 8a2 2 0 1 1 4 0v6a8 8 0 0 1-8 8h-2c-2.8 0-4.5-.9-6-2.3l-3.6-3.6a2 2 0 0 1 2.8-2.8L7 15"></path></svg></button>
           <span class="tool-divider"></span>
-          <button id="zoom-out" class="tool-button" type="button" aria-label="축소">−</button>
-          <span id="zoom-label" class="zoom-label">100%</span>
-          <button id="zoom-in" class="tool-button" type="button" aria-label="확대">+</button>
-          <button id="zoom-100" class="tool-button text-tool" type="button" aria-label="확대율 100%">100%</button>
-          <button id="fit-all" class="tool-button" type="button" aria-label="전체 보기 (F)">⛶</button>
+          <button id="import-button" class="tool-button" type="button" aria-label="이미지 가져오기" title="이미지 가져오기"><svg aria-hidden="true" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="3"></rect><path d="M12 8v8M8 12h8"></path></svg></button>
+          <span class="tool-divider"></span>
+          <button id="zoom-out" class="tool-button" type="button" aria-label="축소" title="축소 (Ctrl −)"><svg aria-hidden="true" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round"><path d="M6 12h12"></path></svg></button>
+          <button id="zoom-label" class="tool-button zoom-label" type="button" aria-label="확대율 100%로 초기화" title="100%로 초기화">100%</button>
+          <button id="zoom-in" class="tool-button" type="button" aria-label="확대" title="확대 (Ctrl +)"><svg aria-hidden="true" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round"><path d="M12 6v12M6 12h12"></path></svg></button>
+          <button id="fit-all" class="tool-button" type="button" aria-label="전체 보기 (Ctrl 0)" title="전체 보기 (Ctrl 0)"><svg aria-hidden="true" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M4 9V5a1 1 0 0 1 1-1h4M20 9V5a1 1 0 0 0-1-1h-4M4 15v4a1 1 0 0 0 1 1h4M20 15v4a1 1 0 0 1-1 1h-4"></path></svg></button>
+          <span class="tool-divider"></span>
+          <button id="toolbar-ungroup" class="tool-button" type="button" aria-label="그룹 해제" title="그룹 해제" disabled><svg aria-hidden="true" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linejoin="round"><rect x="3" y="3" width="11" height="11" rx="2"></rect><rect x="10" y="10" width="11" height="11" rx="2" stroke-dasharray="3 2.5"></rect></svg></button>
+          <button id="toolbar-delete" class="tool-button" type="button" aria-label="선택 항목 삭제" title="삭제 (Del)" disabled><svg aria-hidden="true" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M4 7h16M9.5 7V4.5h5V7M6.5 7l.9 12.1a1 1 0 0 0 1 .9h7.2a1 1 0 0 0 1-.9L17.5 7"></path></svg></button>
         </div>
         <div class="tool-group tool-group-right">
-          <button id="layers-toggle" class="tool-button layers-button active" type="button" aria-label="레이어 패널 (L)" aria-pressed="true">▱ <span>레이어</span></button>
+          <span class="tool-divider"></span>
+          <button id="layers-toggle" class="tool-button layers-button active" type="button" aria-label="레이어 패널 (L)" aria-pressed="true"><svg aria-hidden="true" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linejoin="round"><path d="M12 3.5l9 5-9 5-9-5z"></path><path d="M3 13.5l9 5 9-5"></path></svg><span>레이어</span></button>
+          <span class="tool-divider"></span>
           <button id="save-status" class="save-status" type="button" aria-label="저장 상태">저장 전</button>
-          <button id="export-png" class="export-button" type="button" aria-label="PNG 내보내기">↓ <span>PNG</span></button>
-          <button id="export-jpg" class="export-button secondary-export" type="button" aria-label="JPG 내보내기">JPG</button>
-          <button id="import-button" class="import-tool" type="button" aria-label="이미지 가져오기">＋ <span>이미지</span></button>
+          <span class="tool-divider"></span>
+          <div class="export-wrap">
+            <button id="export-toggle" class="export-button" type="button" aria-label="내보내기 형식 선택" aria-haspopup="menu" aria-expanded="false" aria-controls="export-menu"><svg aria-hidden="true" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 4v11M7 10l5 5 5-5M5 20h14"></path></svg><span>내보내기</span></button>
+            <div id="export-menu" class="export-menu hidden" role="menu" aria-label="내보내기 형식">
+              <button id="export-png" class="export-menu-item" type="button" role="menuitem"><span class="export-preview png-preview" aria-hidden="true"></span><span class="export-copy"><strong>PNG</strong><span>투명 배경</span></span></button>
+              <button id="export-jpg" class="export-menu-item" type="button" role="menuitem"><span class="export-preview jpg-preview" aria-hidden="true"></span><span class="export-copy"><strong>JPG</strong><span>흰색 배경</span></span></button>
+              <p class="export-note">전체 이미지와 레이어 순서를 유지해 저장합니다.</p>
+            </div>
+          </div>
         </div>
       </nav>
 

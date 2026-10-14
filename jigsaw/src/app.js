@@ -182,6 +182,7 @@ function setSelection(id, focusId = id, parentId = null, save = true) {
 function updateZoomLabels() {
   const label = `${Math.round(camera.zoom * 100)}%`;
   byId('zoom-label').textContent = label;
+  byId('zoom-label').setAttribute('aria-label', `현재 확대율 ${label}. 클릭하여 100%로 초기화`);
   byId('canvas-zoom').textContent = label;
 }
 
@@ -194,10 +195,12 @@ function renderSelection() {
     elements: {
       dock: byId('selection-dock'), name: byId('selection-name'), meta: byId('selection-meta'),
       x: byId('value-x'), y: byId('value-y'), scale: byId('value-scale'), rotation: byId('value-rotation'),
-      alignButton: byId('align-button'), resetButton: byId('reset-transform'),
-      ungroupButton: byId('ungroup-button'), deleteButton: byId('delete-button')
+      alignButton: byId('align-button'), resetButton: byId('reset-transform')
     }
   });
+  const toolbarSelection = selectedId ? findRoot(documentModel, selectedId) : null;
+  byId('toolbar-ungroup').disabled = !toolbarSelection || toolbarSelection.type !== 'group' || Boolean(alignDraft);
+  byId('toolbar-delete').disabled = !toolbarSelection || Boolean(alignDraft);
 }
 
 function renderLayers() {
@@ -660,6 +663,11 @@ function nudgeSelection(dx, dy) {
 
 function openFilePicker() { fileInput.click(); }
 
+function setExportMenu(open) {
+  byId('export-menu').classList.toggle('hidden', !open);
+  byId('export-toggle').setAttribute('aria-expanded', String(open));
+}
+
 function isFileDrag(event) {
   return [...(event.dataTransfer?.types || [])].includes('Files');
 }
@@ -863,6 +871,9 @@ function onKeyDown(event) {
   finishLayoutTransition();
   if (event.code === 'Space' && !ignored && !isInteractiveTarget(target)) { spaceDown = true; canvas.classList.add('pan-cursor'); event.preventDefault(); return; }
   const key = event.key.toLowerCase();
+  if (key === 'escape' && !byId('export-menu').classList.contains('hidden')) { setExportMenu(false); byId('export-toggle').focus(); event.preventDefault(); return; }
+  if (!byId('export-menu').classList.contains('hidden') && key === 'arrowdown') { byId('export-png').focus(); event.preventDefault(); return; }
+  if (!byId('export-menu').classList.contains('hidden') && key === 'arrowup') { byId('export-jpg').focus(); event.preventDefault(); return; }
   if (key === 'escape' && alignDraft) { cancelAlignment(); event.preventDefault(); return; }
   if ((event.ctrlKey || event.metaKey) && (key === '+' || key === '=')) { zoomAt(camera.zoom * 1.15); event.preventDefault(); return; }
   if ((event.ctrlKey || event.metaKey) && key === '-') { zoomAt(camera.zoom / 1.15); event.preventDefault(); return; }
@@ -894,20 +905,23 @@ function registerEvents() {
   byId('pan-tool').addEventListener('click', () => setTool('pan'));
   byId('zoom-in').addEventListener('click', () => zoomAt(camera.zoom * 1.15));
   byId('zoom-out').addEventListener('click', () => zoomAt(camera.zoom / 1.15));
-  byId('zoom-100').addEventListener('click', () => { camera.zoom = 1; markChanged(false); });
+  byId('zoom-label').addEventListener('click', () => { camera.zoom = 1; markChanged(false); });
   byId('fit-all').addEventListener('click', fitAll);
+  byId('toolbar-ungroup').addEventListener('click', ungroupSelection);
+  byId('toolbar-delete').addEventListener('click', deleteSelection);
   byId('layers-toggle').addEventListener('click', () => togglePanel());
-  byId('close-layers').addEventListener('click', () => togglePanel(false));
   byId('align-button').addEventListener('click', startAlignment);
   byId('reset-transform').addEventListener('click', resetTransform);
-  byId('ungroup-button').addEventListener('click', ungroupSelection);
-  byId('delete-button').addEventListener('click', deleteSelection);
+  byId('export-toggle').addEventListener('click', () => setExportMenu(byId('export-menu').classList.contains('hidden')));
   byId('save-status').addEventListener('click', () => {
     if (restoreFailed) void retryRestore();
     else if (persistenceError) scheduleSave(true);
   });
-  byId('export-png').addEventListener('click', () => exportImage('image/png'));
-  byId('export-jpg').addEventListener('click', () => exportImage('image/jpeg'));
+  byId('export-png').addEventListener('click', () => { setExportMenu(false); exportImage('image/png'); });
+  byId('export-jpg').addEventListener('click', () => { setExportMenu(false); exportImage('image/jpeg'); });
+  document.addEventListener('pointerdown', (event) => {
+    if (!byId('export-menu').contains(event.target) && !byId('export-toggle').contains(event.target)) setExportMenu(false);
+  });
   byId('help-button').addEventListener('click', () => byId('help-dialog').showModal());
   byId('update-button').addEventListener('click', applyAppUpdate);
   byId('install-button').addEventListener('click', async () => {

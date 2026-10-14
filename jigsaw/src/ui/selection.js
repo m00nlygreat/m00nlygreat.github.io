@@ -6,9 +6,7 @@ export function renderSelectionDock({ documentModel, selectedId, layerFocusId, l
   elements.dock.classList.toggle('hidden', !item);
   if (!item) {
     elements.alignButton.classList.add('hidden');
-    elements.ungroupButton.classList.add('hidden');
     elements.resetButton.classList.add('hidden');
-    elements.deleteButton.classList.add('hidden');
     return;
   }
 
@@ -30,10 +28,6 @@ export function renderSelectionDock({ documentModel, selectedId, layerFocusId, l
 
   const availability = commandAvailability(documentModel, { selectedId, layerFocusId, layerFocusParent }, { aligning: Boolean(alignDraft) });
   elements.alignButton.classList.toggle('hidden', !availability.canAlign);
-  elements.ungroupButton.classList.toggle('hidden', !availability.canUngroup);
   elements.resetButton.classList.toggle('hidden', Boolean(alignDraft));
-  elements.deleteButton.classList.toggle('hidden', Boolean(alignDraft));
   elements.resetButton.disabled = !availability.canResetTransform;
-  elements.ungroupButton.disabled = !availability.canUngroup;
-  elements.deleteButton.disabled = !availability.canDelete;
 }

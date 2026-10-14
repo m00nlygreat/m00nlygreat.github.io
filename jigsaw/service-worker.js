@@ -1,4 +1,4 @@
-const CACHE = 'stitchboard-shell-v36';
+const CACHE = 'stitchboard-shell-v37';
 const SHELL = [
   './', './index.html', './icon.svg', './manifest.webmanifest', './src/styles.css', './src/app.js',
   './src/domain/model.js', './src/domain/geometry.js', './src/domain/commands.js', './src/imaging/decode.js', './src/imaging/thumbnail.js',
@@ -32,3 +32,4 @@ self.addEventListener('fetch', (event) => {
     return response;
   })));
 });
+

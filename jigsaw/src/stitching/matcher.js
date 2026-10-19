@@ -127,26 +127,36 @@ export function correlationScore(imageA, imageB, dx, dy, stride) {
   return (product - sumA * sumB / count) / Math.sqrt(varianceA * varianceB);
 }
 
+function overlapMetrics(imageA, imageB, dx, dy) {
+  const startX = Math.max(0, -dx), endX = Math.min(imageB.width, imageA.width - dx);
+  const startY = Math.max(0, -dy), endY = Math.min(imageB.height, imageA.height - dy);
+  const width = Math.max(0, endX - startX), height = Math.max(0, endY - startY);
+  const smallerArea = Math.min(imageA.width * imageA.height, imageB.width * imageB.height);
+  return { width, height, ratio: width * height / smallerArea };
+}
+
 export function correlateTranslation(imageA, imageB) {
-  const factor = Math.max(2, Math.ceil(Math.max(imageA.width, imageA.height) / 160));
-  const width = Math.ceil(imageA.width / factor), height = Math.ceil(imageA.height / factor);
+  const sameSize = imageA.width === imageB.width && imageA.height === imageB.height;
+  const factor = Math.max(2, Math.ceil(Math.max(imageA.width, imageA.height, imageB.width, imageB.height) / 160));
   const sampleImage = (source) => {
+    const width = Math.ceil(source.width / factor), height = Math.ceil(source.height / factor);
     const gray = new Uint8Array(width * height);
     for (let y = 0; y < height; y++) {
-      const sourceY = Math.min(source.height - 1, Math.round(y * source.height / height));
+      const sourceY = Math.min(source.height - 1, sameSize ? Math.round(y * source.height / height) : y * factor);
       for (let x = 0; x < width; x++) {
-        const sourceX = Math.min(source.width - 1, Math.round(x * source.width / width));
+        const sourceX = Math.min(source.width - 1, sameSize ? Math.round(x * source.width / width) : x * factor);
         gray[y * width + x] = source.gray[sourceY * source.width + sourceX];
       }
     }
     return { width, height, gray };
   };
   const a = sampleImage(imageA), b = sampleImage(imageB);
-  const maxX = Math.floor(width * .76), maxY = Math.floor(height * .76);
-  const stride = Math.max(2, Math.round(Math.min(width, height) / 64));
+  const maxX = Math.floor(Math.min(a.width, b.width) * .76), maxY = Math.floor(Math.min(a.height, b.height) * .76);
+  const stride = Math.max(2, Math.round(Math.min(a.width, a.height, b.width, b.height) / 64));
   let best = { score: -1, dx: 0, dy: 0 };
   const peaks = [];
-  const startX = -Math.floor(maxX / 2) * 2, startY = -Math.floor(maxY / 2) * 2;
+  const startX = sameSize ? -Math.floor(maxX / 2) * 2 : -maxX;
+  const startY = sameSize ? -Math.floor(maxY / 2) * 2 : -maxY;
   for (let dy = startY; dy <= maxY; dy += 2) {
     for (let dx = startX; dx <= maxX; dx += 2) {
       const score = correlationScore(a, b, dx, dy, stride);
@@ -161,7 +171,7 @@ export function correlateTranslation(imageA, imageB) {
   const margin = competing ? best.score - competing.score : 1;
   if (margin < .012) return { matched: false, reason: 'ambiguous-correlation', confidence: best.score, margin, dx: best.dx * factor, dy: best.dy * factor };
 
-  const fineStride = Math.max(3, Math.round(Math.min(imageA.width, imageA.height) / 96));
+  const fineStride = Math.max(3, Math.round(Math.min(imageA.width, imageA.height, imageB.width, imageB.height) / 96));
   let fine = { score: -1, dx: best.dx * factor, dy: best.dy * factor };
   const centerX = best.dx * factor, centerY = best.dy * factor;
   for (let dy = centerY - factor; dy <= centerY + factor; dy++) {
@@ -170,16 +180,46 @@ export function correlateTranslation(imageA, imageB) {
       if (score !== null && score > fine.score) fine = { score, dx, dy };
     }
   }
-  const overlapWidth = imageA.width - Math.abs(fine.dx), overlapHeight = imageA.height - Math.abs(fine.dy);
-  const overlapRatio = Math.max(0, overlapWidth) * Math.max(0, overlapHeight) / (imageA.width * imageA.height);
-  if (fine.score < .80 || overlapRatio < .08) return { matched: false, reason: 'low-correlation', confidence: fine.score, overlapRatio, dx: fine.dx, dy: fine.dy };
-  const pixelScale = imageA.originalWidth / imageA.width;
-  return { matched: true, dx: Math.round(fine.dx * pixelScale), dy: Math.round(fine.dy * pixelScale), confidence: Math.min(fine.score, .999), overlapRatio, inliers: 0, correspondences: 0, method: 'normalized-correlation' };
+  const overlap = overlapMetrics(imageA, imageB, fine.dx, fine.dy);
+  if (fine.score < .80 || overlap.ratio < .08) return { matched: false, reason: 'low-correlation', confidence: fine.score, overlapRatio: overlap.ratio, dx: fine.dx, dy: fine.dy };
+  const pixelScale = imageA.analysisScale || (imageA.originalWidth || imageA.width) / imageA.width;
+  return { matched: true, dx: Math.round(fine.dx * pixelScale), dy: Math.round(fine.dy * pixelScale), confidence: Math.min(fine.score, .999), overlapRatio: overlap.ratio, inliers: 0, correspondences: 0, method: 'normalized-correlation' };
 }
 
-export function matchPair(imageA, imageB) {
+function normalizeCropPair(imageA, imageB) {
+  const dimensions = [imageA, imageB].map((image) => ({
+    width: image.originalWidth || image.width,
+    height: image.originalHeight || image.height,
+    scaleX: (image.originalWidth || image.width) / image.width,
+    scaleY: (image.originalHeight || image.height) / image.height
+  }));
+  const pixelScale = Math.max(...dimensions.flatMap(({ scaleX, scaleY }) => [scaleX, scaleY]));
+  if (!Number.isFinite(pixelScale) || pixelScale <= 0) return null;
+  const normalized = [imageA, imageB].map((image, index) => {
+    const { width: originalWidth, height: originalHeight, scaleX, scaleY } = dimensions[index];
+    const width = Math.max(1, Math.ceil(originalWidth / pixelScale));
+    const height = Math.max(1, Math.ceil(originalHeight / pixelScale));
+    const gray = new Uint8Array(width * height);
+    for (let y = 0; y < height; y++) {
+      const sourceY = Math.min(image.height - 1, Math.round(y * pixelScale / scaleY));
+      for (let x = 0; x < width; x++) {
+        const sourceX = Math.min(image.width - 1, Math.round(x * pixelScale / scaleX));
+        gray[y * width + x] = image.gray[sourceY * image.width + sourceX];
+      }
+    }
+    return { ...image, width, height, originalWidth, originalHeight, gray,
+      features: extractFeatures(gray, width, height), analysisScale: pixelScale };
+  });
+  return { imageA: normalized[0], imageB: normalized[1], pixelScale };
+}
+
+export function matchPair(imageA, imageB, { allowDifferentDimensions = false } = {}) {
+  let pixelScale = imageA.analysisScale || (imageA.originalWidth || imageA.width) / imageA.width;
   if (imageA.originalWidth !== imageB.originalWidth || imageA.originalHeight !== imageB.originalHeight) {
-    return { matched: false, reason: 'different-size' };
+    if (!allowDifferentDimensions) return { matched: false, reason: 'different-size' };
+    const pair = normalizeCropPair(imageA, imageB);
+    if (!pair) return { matched: false, reason: 'different-size' };
+    ({ imageA, imageB, pixelScale } = pair);
   }
   if (imageA.width < 40 || imageA.height < 40 || imageB.width < 40 || imageB.height < 40) {
     return { matched: false, reason: 'too-small' };
@@ -203,15 +243,13 @@ export function matchPair(imageA, imageB) {
   const dy = median(bestInliers.map((match) => match.a.y - match.b.y));
   const spreadX = Math.max(...bestInliers.map((match) => match.a.x)) - Math.min(...bestInliers.map((match) => match.a.x));
   const spreadY = Math.max(...bestInliers.map((match) => match.a.y)) - Math.min(...bestInliers.map((match) => match.a.y));
-  const coverage = Math.max(spreadX / imageA.width, spreadY / imageA.height);
+  const coverage = Math.max(spreadX / Math.min(imageA.width, imageB.width), spreadY / Math.min(imageA.height, imageB.height));
   if (coverage < 0.16) return correlateTranslation(imageA, imageB);
-  const overlapWidth = imageA.width - Math.abs(dx), overlapHeight = imageA.height - Math.abs(dy);
-  const overlapRatio = Math.max(0, overlapWidth) * Math.max(0, overlapHeight) / (imageA.width * imageA.height);
-  if (overlapRatio < 0.06 || overlapWidth < 18 || overlapHeight < 18) return correlateTranslation(imageA, imageB);
-  const pixelScale = imageA.originalWidth / imageA.width;
+  const overlap = overlapMetrics(imageA, imageB, dx, dy);
+  if (overlap.ratio < 0.06 || overlap.width < 18 || overlap.height < 18) return correlateTranslation(imageA, imageB);
   return {
     matched: true, dx: Math.round(dx * pixelScale), dy: Math.round(dy * pixelScale),
-    confidence: ratio, inliers: bestInliers.length, correspondences: matches.length, overlapRatio
+    confidence: ratio, inliers: bestInliers.length, correspondences: matches.length, overlapRatio: overlap.ratio
   };
 }
 

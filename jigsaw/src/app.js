@@ -1141,7 +1141,7 @@ async function processFiles(files, isSample = false, compareExisting = false) {
           if (progress.phase === 'read') setProcessing('이미지 읽는 중', `${progress.completed} / ${progress.total}개`);
           if (progress.phase === 'match') setProcessing('겹침 탐색 중', `${progress.completed.toLocaleString()} / ${progress.total.toLocaleString()}개 이미지 쌍 · 연결 ${progress.matchedPairs}개`);
           if (progress.phase === 'layout') setProcessing('경계 정렬 중', '연결된 이미지의 상대 위치를 계산하고 있습니다');
-        }, existingSources.length ? { candidatePairs: externalPairs } : undefined);
+        }, existingSources.length ? { candidatePairs: externalPairs, allowDifferentDimensions: true } : undefined);
       } catch (error) { engineError = error; }
     }
     setProcessing('스티칭 결과 반영 중', '원본 파일과 작업 상태를 준비하고 있습니다');

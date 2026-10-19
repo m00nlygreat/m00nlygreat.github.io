@@ -20,7 +20,7 @@ async function readImage(blob, originalWidth, originalHeight, assetId) {
 }
 
 self.onmessage = async (event) => {
-  const { operationId, images, candidatePairs } = event.data;
+  const { operationId, images, candidatePairs, allowDifferentDimensions = false } = event.data;
   try {
     const decoded = [];
     for (let index = 0; index < images.length; index++) {
@@ -40,7 +40,7 @@ self.onmessage = async (event) => {
     }
     let completed = 0;
     for (const [a, b] of candidatePairs || allPairs()) {
-      const result = matchPair(decoded[a], decoded[b]);
+      const result = matchPair(decoded[a], decoded[b], { allowDifferentDimensions });
       if (result.matched) edges.push({ a, b, dx: result.dx, dy: result.dy, confidence: result.confidence });
       else {
         const reason = result.reason || 'no-overlap';

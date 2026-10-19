@@ -2,7 +2,7 @@ export function createStitchingService() {
   let activeWorker = null;
   let currentId = null;
 
-  function run(images, onProgress, { candidatePairs = null } = {}) {
+  function run(images, onProgress, { candidatePairs = null, allowDifferentDimensions = false } = {}) {
     if (activeWorker) return Promise.reject(new Error('이미지 처리가 진행 중입니다.'));
     const operationId = globalThis.crypto?.randomUUID?.() || `${Date.now()}-${Math.random()}`;
     const worker = new Worker(new URL('./worker.js', import.meta.url), { type: 'module' });
@@ -37,7 +37,7 @@ export function createStitchingService() {
       };
       worker.onerror = (event) => fail(new Error(event.message || '스티칭 워커를 실행하지 못했습니다.'));
       worker.onmessageerror = () => fail(new Error('스티칭 결과를 읽지 못했습니다.'));
-      try { worker.postMessage({ operationId, images, candidatePairs }); }
+      try { worker.postMessage({ operationId, images, candidatePairs, allowDifferentDimensions }); }
       catch (error) { fail(error); }
     });
   }

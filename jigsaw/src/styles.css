@@ -42,6 +42,7 @@ button:focus-visible { outline: 2px solid var(--blue); outline-offset: 2px; }
 .canvas-frame { position: relative; flex: 1 1 auto; min-width: 0; overflow: hidden; background: var(--bg); }
 #canvas { display: block; width: 100%; height: 100%; touch-action: none; cursor: default; }
 #canvas.pan-cursor { cursor: grab; }
+#canvas.selecting { cursor: crosshair; }
 #canvas.dragging { cursor: grabbing; }
 .sidebar { z-index: 3; display: flex; flex: 0 0 288px; flex-direction: column; width: 288px; min-width: 250px; border: 0; border-radius: 14px; background: var(--panel); box-shadow: 0 0 0 1px rgb(255 255 255 / 6%), 0 10px 30px rgb(0 0 0 / 35%); transition: transform .2s ease, margin .2s ease; }
 .sidebar.closed { display: none; }
@@ -167,6 +168,7 @@ kbd { padding: 2px 6px; border: 0; border-radius: 5px; color: var(--text); backg
 .selection-values { display: flex; color: #9e9fa7; font-size: 9px; gap: 10px; white-space: nowrap; }
 .selection-values b { color: #e6e6ea; font-weight: 600; }
 .selection-actions { display: flex; gap: 5px; }
+#selection-group { display: none; }
 .toast-region { position: absolute; z-index: 10; top: 70px; right: 20px; display: flex; width: min(360px, calc(100vw - 32px)); flex-direction: column; align-items: stretch; gap: 8px; pointer-events: none; }
 .toast { display: flex; align-items: start; justify-content: space-between; padding: 11px 12px; border: 1px solid #45464c; border-radius: 9px; color: #e4e4e8; background: #2b2c31f5; box-shadow: 0 8px 24px #0006; font-size: 11px; line-height: 1.45; pointer-events: auto; gap: 12px; }
 .toast.warning { border-color: #665639; color: #f2d99c; }
@@ -218,6 +220,7 @@ kbd { padding: 2px 6px; border: 0; border-radius: 5px; color: var(--text); backg
   .sidebar { position: absolute; top: auto; right: 8px; bottom: calc(116px + env(safe-area-inset-bottom)); width: min(340px, calc(100vw - 16px)); height: min(48vh, 420px); max-height: calc(100% - 130px); min-width: 0; border: 1px solid #3a3b41; border-radius: 12px; box-shadow: 0 12px 34px #0008; }
   .sidebar.closed { display: none; }
   .toolbar { bottom: calc(8px + env(safe-area-inset-bottom)); width: calc(100% - 16px); max-width: none; min-height: 49px; padding: 5px; border-radius: 11px; flex-wrap: wrap; justify-content: center; row-gap: 3px; }
+  #toolbar-group { display: none; }
   .tool-group { justify-content: center; gap: 1px; }
   .tool-group-right { width: 100%; justify-content: center; padding: 4px 0 0; border-top: 1px solid #44454b; border-left: 0; gap: 5px; }
   .tool-button { min-width: 34px; height: 34px; padding: 0 5px; font-size: 13px; }
@@ -230,6 +233,8 @@ kbd { padding: 2px 6px; border: 0; border-radius: 5px; color: var(--text); backg
   .export-button { min-width: 34px; height: 32px; padding: 0 8px; font-size: 11px; }
   .export-button span { display: none; }
   .selection-dock { bottom: calc(104px + env(safe-area-inset-bottom)); width: calc(100% - 16px); max-width: none; min-height: 48px; padding: 6px 8px; overflow-x: auto; gap: 8px; }
+  .selection-dock.multi-selection .selection-values { display: none; }
+  #selection-group:not(.hidden) { display: inline-flex; }
   .selection-summary { min-width: 80px; max-width: 105px; }
   .selection-summary strong { max-width: 105px; font-size: 10px; }
   .selection-values { gap: 6px; font-size: 8px; }

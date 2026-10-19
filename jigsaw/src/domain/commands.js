@@ -1,7 +1,9 @@
 import {
   findContainingGroup,
   findRoot,
+  groupItems,
   groupFromStitch,
+  addPastedImageToTarget,
   makeImage,
   mergeImageIntoTarget,
   moveRoot,
@@ -150,6 +152,33 @@ export function applyImportResults(document, { records, components, engineError 
   };
 }
 
+export function groupLayersCommand(document, ids) {
+  if (!Array.isArray(ids) || ids.length < 2 || new Set(ids).size !== ids.length || ids.some((id) => !findRoot(document, id))) {
+    return { changed: false, reason: 'invalid-selection', selection: normalizeSelection(document) };
+  }
+  const group = groupItems(document, ids);
+  if (!group) return { changed: false, reason: 'invalid-selection', selection: normalizeSelection(document) };
+  return {
+    changed: true,
+    groupId: group.id,
+    selection: normalizeSelection(document, { selectedId: group.id })
+  };
+}
+
+export function addPastedImageToTargetCommand(document, record, targetId, transform) {
+  const target = findRoot(document, targetId);
+  if (!record?.id || !record?.name || !record?.mime || !Number.isFinite(record.width) || !Number.isFinite(record.height)
+    || record.width <= 0 || record.height <= 0 || document.assets[record.id] || !target) {
+    return { changed: false, reason: 'invalid-image-or-target', selection: normalizeSelection(document) };
+  }
+  if (![transform?.x, transform?.y, transform?.scale, transform?.rotation].every(Number.isFinite) || transform.scale <= 0) {
+    return { changed: false, reason: 'invalid-transform', selection: normalizeSelection(document) };
+  }
+  const groupId = addPastedImageToTarget(document, record, targetId, transform);
+  if (!groupId) return { changed: false, reason: 'merge-failed', selection: normalizeSelection(document) };
+  return { changed: true, groupId, selection: normalizeSelection(document, { selectedId: groupId }) };
+}
+
 export function moveItemCommand(document, id, x, y) {
   if (!Number.isFinite(x) || !Number.isFinite(y)) return { changed: false, reason: 'invalid-position' };
   return { changed: moveRoot(document, id, x, y), reason: findRoot(document, id) ? null : 'missing-item' };
@@ -225,6 +254,15 @@ export function deleteLayerCommand(document, selection = {}) {
     reason: result.removed ? null : 'missing-item',
     selection: normalizeSelection(document, { selectedId: result.selection })
   };
+}
+
+export function deleteLayersCommand(document, ids) {
+  if (!Array.isArray(ids) || ids.length === 0 || new Set(ids).size !== ids.length || ids.some((id) => !findRoot(document, id))) {
+    return { changed: false, reason: 'invalid-selection', selection: normalizeSelection(document) };
+  }
+  const selectedIds = new Set(ids);
+  document.items = document.items.filter((item) => !selectedIds.has(item.id));
+  return { changed: true, removedIds: [...selectedIds], selection: normalizeSelection(document) };
 }
 
 export function ungroupCommand(document, id) {

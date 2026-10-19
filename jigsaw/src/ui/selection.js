@@ -1,10 +1,26 @@
 import { findRoot } from '../domain/model.js';
 import { commandAvailability } from '../domain/commands.js';
 
-export function renderSelectionDock({ documentModel, selectedId, layerFocusId, layerFocusParent, alignDraft, transformDraft, layoutTransform, elements }) {
+export function renderSelectionDock({ documentModel, selectedId, selectedIds, layerFocusId, layerFocusParent, alignDraft, transformDraft, layoutTransform, elements }) {
   const item = selectedId ? findRoot(documentModel, selectedId) : null;
-  elements.dock.classList.toggle('hidden', !item);
+  const selectionCount = selectedIds?.size || (item ? 1 : 0);
+  elements.dock.classList.toggle('hidden', !item && !selectionCount);
+  elements.dock.classList.toggle('multi-selection', selectionCount > 1);
+  elements.groupButton?.classList.toggle('hidden', selectionCount < 2);
+  if (elements.groupButton) elements.groupButton.disabled = Boolean(alignDraft);
   if (!item) {
+    elements.groupButton?.classList.add('hidden');
+    elements.alignButton.classList.add('hidden');
+    elements.resetButton.classList.add('hidden');
+    return;
+  }
+  if (selectionCount > 1) {
+    elements.name.textContent = `${selectionCount}개 레이어 선택`;
+    elements.meta.textContent = '그룹화하거나 삭제할 수 있습니다';
+    elements.x.textContent = '—';
+    elements.y.textContent = '—';
+    elements.scale.textContent = '—';
+    elements.rotation.textContent = '—';
     elements.alignButton.classList.add('hidden');
     elements.resetButton.classList.add('hidden');
     return;

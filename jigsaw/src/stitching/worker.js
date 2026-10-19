@@ -20,7 +20,7 @@ async function readImage(blob, originalWidth, originalHeight, assetId) {
 }
 
 self.onmessage = async (event) => {
-  const { operationId, images } = event.data;
+  const { operationId, images, candidatePairs } = event.data;
   try {
     const decoded = [];
     for (let index = 0; index < images.length; index++) {
@@ -30,26 +30,38 @@ self.onmessage = async (event) => {
     const edges = [];
     const failureReasonsByIndex = Array.from({ length: images.length }, () => new Set());
     const rejectedPairsByReason = {};
-    const total = images.length * (images.length - 1) / 2;
+    if (candidatePairs !== null && candidatePairs !== undefined && (!Array.isArray(candidatePairs) || candidatePairs.some((pair) => !Array.isArray(pair) || pair.length !== 2
+      || !pair.every((index) => Number.isInteger(index) && index >= 0 && index < images.length) || pair[0] === pair[1]))) {
+      throw new Error('비교할 이미지 쌍이 올바르지 않습니다.');
+    }
+    const total = candidatePairs?.length ?? images.length * (images.length - 1) / 2;
+    function* allPairs() {
+      for (let a = 0; a < images.length; a++) for (let b = a + 1; b < images.length; b++) yield [a, b];
+    }
     let completed = 0;
-    for (let a = 0; a < images.length; a++) {
-      for (let b = a + 1; b < images.length; b++) {
-        const result = matchPair(decoded[a], decoded[b]);
-        if (result.matched) edges.push({ a, b, dx: result.dx, dy: result.dy, confidence: result.confidence });
-        else {
-          const reason = result.reason || 'no-overlap';
-          rejectedPairsByReason[reason] = (rejectedPairsByReason[reason] || 0) + 1;
-          failureReasonsByIndex[a].add(reason);
-          failureReasonsByIndex[b].add(reason);
-        }
-        completed++;
-        self.postMessage({ operationId, type: 'progress', phase: 'match', completed, total, matchedPairs: edges.length });
+    for (const [a, b] of candidatePairs || allPairs()) {
+      const result = matchPair(decoded[a], decoded[b]);
+      if (result.matched) edges.push({ a, b, dx: result.dx, dy: result.dy, confidence: result.confidence });
+      else {
+        const reason = result.reason || 'no-overlap';
+        rejectedPairsByReason[reason] = (rejectedPairsByReason[reason] || 0) + 1;
+        failureReasonsByIndex[a].add(reason);
+        failureReasonsByIndex[b].add(reason);
       }
+      completed++;
+      self.postMessage({ operationId, type: 'progress', phase: 'match', completed, total, matchedPairs: edges.length });
     }
     self.postMessage({ operationId, type: 'progress', phase: 'layout', completed: 0, total: images.length });
     const result = createStitchResult(decoded, edges, rejectedPairsByReason, failureReasonsByIndex);
+    const matchedEdges = edges.map(({ a, b, dx, dy, confidence }) => ({
+      assetIdA: images[a].assetId,
+      assetIdB: images[b].assetId,
+      dx,
+      dy,
+      confidence
+    }));
     self.postMessage({ operationId, type: 'progress', phase: 'layout', completed: images.length, total: images.length });
-    self.postMessage({ operationId, type: 'result', ...result });
+    self.postMessage({ operationId, type: 'result', ...result, matchedEdges });
   } catch (error) {
     self.postMessage({ operationId, type: 'error', message: error instanceof Error ? error.message : String(error) });
   }

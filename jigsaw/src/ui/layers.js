@@ -26,13 +26,16 @@ function createLayerIcon(name) {
   return svg;
 }
 
-function createLayerRow({ item, parentId, child, documentModel, assets, selectedId, layerFocusId, expandedGroups, aligning }) {
+function createLayerRow({ item, parentId, child, documentModel, assets, selectedId, selectedIds, layerFocusId, expandedGroups, aligning }) {
+  const isSelected = child
+    ? layerFocusId === item.id
+    : (selectedIds?.has(item.id) || selectedId === item.id);
   const row = document.createElement('div');
-  row.className = `layer-row${child ? ' child-row' : ''}${layerFocusId === item.id || (!child && selectedId === item.id) ? ' selected' : ''}${item.needsAlignment ? ' needs-alignment' : ''}`;
+  row.className = `layer-row${child ? ' child-row' : ''}${isSelected ? ' selected' : ''}${item.needsAlignment ? ' needs-alignment' : ''}`;
   row.dataset.id = item.id;
   if (parentId) row.dataset.parent = parentId;
   row.setAttribute('role', 'treeitem');
-  row.setAttribute('aria-selected', String(layerFocusId === item.id || (!child && selectedId === item.id)));
+  row.setAttribute('aria-selected', String(isSelected));
 
   if (child) {
     const guide = document.createElement('span');
@@ -88,7 +91,7 @@ function createLayerRow({ item, parentId, child, documentModel, assets, selected
   return row;
 }
 
-export function renderLayerList({ documentModel, assets, selectedId, layerFocusId, expandedGroups, layerList, aligning = false }) {
+export function renderLayerList({ documentModel, assets, selectedId, selectedIds = new Set(), layerFocusId, expandedGroups, layerList, aligning = false }) {
   const active = document.activeElement;
   const focusedRow = active instanceof HTMLElement ? active.closest('.layer-row') : null;
   const focusTarget = focusedRow && layerList.contains(focusedRow) && active.dataset.action
@@ -98,11 +101,11 @@ export function renderLayerList({ documentModel, assets, selectedId, layerFocusI
   for (const item of [...documentModel.items].reverse()) {
     const entry = document.createElement('div');
     entry.className = 'layer-entry';
-    entry.append(createLayerRow({ item, child: false, documentModel, assets, selectedId, layerFocusId, expandedGroups, aligning }));
+    entry.append(createLayerRow({ item, child: false, documentModel, assets, selectedId, selectedIds, layerFocusId, expandedGroups, aligning }));
     if (item.type === 'group' && expandedGroups.has(item.id)) {
       const children = document.createElement('div'); children.className = 'layer-children'; children.setAttribute('role', 'group');
       for (const child of [...item.children].reverse()) {
-        children.append(createLayerRow({ item: child, parentId: item.id, child: true, documentModel, assets, selectedId, layerFocusId, expandedGroups, aligning }));
+        children.append(createLayerRow({ item: child, parentId: item.id, child: true, documentModel, assets, selectedId, selectedIds, layerFocusId, expandedGroups, aligning }));
       }
       entry.append(children);
     }

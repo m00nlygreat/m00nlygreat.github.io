@@ -1,10 +1,13 @@
 import { CanvasRenderer } from './canvas/renderer.js';
 import { createImportLayoutTransitions, interpolateCamera, interpolateTransform, prefersReducedMotion } from './canvas/transition.js';
-import { composeTransform, localBounds, rootVisualCenter, transformAroundCenter, transformPoint, worldBounds } from './domain/geometry.js';
+import { composeTransform, decomposeTransform, localBounds, multiply, rootVisualCenter, transformAroundCenter, transformPoint, worldBounds } from './domain/geometry.js';
 import { createDocument, findRoot, newId, referencedAssetIds } from './domain/model.js';
 import {
   applyImportResults,
+  addPastedImageToTargetCommand,
   deleteLayerCommand,
+  deleteLayersCommand,
+  groupLayersCommand,
   keepAlignmentCommand,
   mergeAlignmentCommand,
   moveItemCommand,
@@ -43,8 +46,10 @@ let documentModel = createDocument();
 let assets = new Map();
 let camera = { x: 0, y: 0, zoom: 1 };
 let selectedId = null;
+let selectedIds = new Set();
 let layerFocusId = null;
 let layerFocusParent = null;
+let layerRangeAnchor = null;
 let expandedGroups = new Set();
 let panelOpen = true;
 let activeTool = 'select';
@@ -52,6 +57,8 @@ let spaceDown = false;
 let pendingImages = [];
 let alignDraft = null;
 let transformDraft = null;
+let multiTransformDraft = new Map();
+let selectionRect = null;
 let layoutTransition = null;
 let snapGuides = null;
 let gesture = null;
@@ -74,7 +81,7 @@ let exportBusy = false;
 const renderer = new CanvasRenderer(canvas, (assetId) => assets.get(assetId)?.bitmap);
 
 function refresh() {
-  renderer.draw({ document: documentModel, metadata: documentModel.assets, camera, selectedId, pending: pendingImages, alignDraft, transformDraft, layoutTransition, snapGuides });
+  renderer.draw({ document: documentModel, metadata: documentModel.assets, camera, selectedId, selectedIds, pending: pendingImages, alignDraft, transformDraft, multiTransformDraft, selectionRect, layoutTransition, snapGuides });
   renderLayers();
   renderSelection();
   updateZoomLabels();
@@ -111,7 +118,7 @@ function saveIndicator(label, tone = 'normal') {
 }
 
 function viewSnapshot() {
-  return captureViewState(documentModel, { camera, selectedId, layerFocusId, layerFocusParent, expandedGroups, panelOpen });
+  return captureViewState(documentModel, { camera, selectedId, selectedIds, layerFocusId, layerFocusParent, expandedGroups, panelOpen });
 }
 
 function persistenceSnapshot() {
@@ -175,12 +182,40 @@ function assetNameFor(id) { return documentModel.assets[id]?.name || '이미지'
 function setSelection(id, focusId = id, parentId = null, save = true) {
   finishLayoutTransition();
   const normalized = normalizeSelection(documentModel, { selectedId: id, layerFocusId: focusId, layerFocusParent: parentId });
-  const changed = selectedId !== normalized.selectedId || layerFocusId !== normalized.layerFocusId || layerFocusParent !== normalized.layerFocusParent;
+  const nextIds = new Set(normalized.selectedId ? [normalized.selectedId] : []);
+  const changed = selectedId !== normalized.selectedId || layerFocusId !== normalized.layerFocusId || layerFocusParent !== normalized.layerFocusParent
+    || !sameIdSet(selectedIds, nextIds);
   selectedId = normalized.selectedId;
+  selectedIds = nextIds;
   layerFocusId = normalized.layerFocusId;
   layerFocusParent = normalized.layerFocusParent;
   refresh();
   if (changed && save) markChanged(false);
+}
+
+function sameIdSet(left, right) {
+  return left.size === right.size && [...left].every((id) => right.has(id));
+}
+
+function setMultipleSelection(ids, primaryId = null, save = true) {
+  finishLayoutTransition();
+  const validIds = [...new Set(ids)].filter((id) => Boolean(findRoot(documentModel, id)));
+  const nextIds = new Set(validIds);
+  const selected = validIds.includes(primaryId) ? primaryId : validIds.at(-1) || null;
+  const normalized = normalizeSelection(documentModel, { selectedId: selected });
+  const changed = selectedId !== normalized.selectedId || layerFocusId !== normalized.layerFocusId || layerFocusParent !== null
+    || !sameIdSet(selectedIds, nextIds);
+  selectedId = normalized.selectedId;
+  selectedIds = nextIds;
+  layerFocusId = normalized.layerFocusId;
+  layerFocusParent = null;
+  refresh();
+  if (changed && save) markChanged(false);
+}
+
+function adoptSelection(selection = {}) {
+  ({ selectedId, layerFocusId, layerFocusParent } = selection);
+  selectedIds = new Set(selectedId ? [selectedId] : []);
 }
 
 function updateZoomLabels() {
@@ -195,20 +230,21 @@ function renderSelection() {
   const transition = selectedRoot && layoutTransition?.items.get(selectedRoot.id);
   const layoutTransform = transition ? interpolateTransform(transition.from, transition.to, layoutTransition.progress) : null;
   renderSelectionDock({
-    documentModel, selectedId, layerFocusId, layerFocusParent, alignDraft, transformDraft, layoutTransform,
+    documentModel, selectedId, selectedIds, layerFocusId, layerFocusParent, alignDraft, transformDraft, layoutTransform,
     elements: {
       dock: byId('selection-dock'), name: byId('selection-name'), meta: byId('selection-meta'),
       x: byId('value-x'), y: byId('value-y'), scale: byId('value-scale'), rotation: byId('value-rotation'),
-      alignButton: byId('align-button'), resetButton: byId('reset-transform')
+      groupButton: byId('selection-group'), alignButton: byId('align-button'), resetButton: byId('reset-transform')
     }
   });
   const toolbarSelection = selectedId ? findRoot(documentModel, selectedId) : null;
-  byId('toolbar-ungroup').disabled = !toolbarSelection || toolbarSelection.type !== 'group' || Boolean(alignDraft);
-  byId('toolbar-delete').disabled = !toolbarSelection || Boolean(alignDraft);
+  byId('toolbar-group').disabled = selectedIds.size < 2 || Boolean(alignDraft);
+  byId('toolbar-ungroup').disabled = selectedIds.size !== 1 || !toolbarSelection || toolbarSelection.type !== 'group' || Boolean(alignDraft);
+  byId('toolbar-delete').disabled = selectedIds.size === 0 || Boolean(alignDraft);
 }
 
 function renderLayers() {
-  renderLayerList({ documentModel, assets, selectedId, layerFocusId, expandedGroups, layerList, aligning: Boolean(alignDraft) });
+  renderLayerList({ documentModel, assets, selectedId, selectedIds, layerFocusId, expandedGroups, layerList, aligning: Boolean(alignDraft) });
 }
 
 function updateAlignmentUI() {
@@ -355,6 +391,7 @@ function fitAll() {
 function focusLayer(itemId, parentId = null) {
   const rootId = parentId || itemId;
   if (!findRoot(documentModel, rootId)) return;
+  layerRangeAnchor = rootId;
   setSelection(rootId, itemId, parentId, true);
 }
 
@@ -394,6 +431,23 @@ function onLayerClick(event) {
     moveFocusedLayer(button.dataset.action === 'front' ? 1 : -1);
     return;
   }
+  const rootId = parentId || id;
+  if (event.shiftKey || event.ctrlKey || event.metaKey) {
+    const order = [...documentModel.items].reverse().map((item) => item.id);
+    if (event.shiftKey) {
+      const anchorId = layerRangeAnchor && order.includes(layerRangeAnchor) ? layerRangeAnchor : selectedId || rootId;
+      const targetIndex = order.indexOf(rootId);
+      const foundAnchor = order.indexOf(anchorId);
+      const anchorIndex = foundAnchor >= 0 ? foundAnchor : targetIndex;
+      const range = order.slice(Math.min(anchorIndex, targetIndex), Math.max(anchorIndex, targetIndex) + 1);
+      setMultipleSelection([...selectedIds, ...range], rootId, true);
+    } else {
+      const next = new Set(selectedIds);
+      if (next.has(rootId)) next.delete(rootId); else next.add(rootId);
+      setMultipleSelection([...next], rootId, true);
+    }
+    return;
+  }
   focusLayer(id, parentId);
 }
 
@@ -424,11 +478,11 @@ function closestSnap(sourceBounds, targetBounds, axis, tolerance) {
   return closest;
 }
 
-function snapTransformToImages(item, transform) {
+function snapTransformToImages(item, transform, ignoredIds = new Set([item.id])) {
   const sourceBounds = worldBounds({ ...item, ...transform }, documentModel.assets);
   if (!sourceBounds) return { transform, guides: null };
   const targets = documentModel.items
-    .filter((target) => target.id !== item.id)
+    .filter((target) => !ignoredIds.has(target.id))
     .map((target) => worldBounds(target, documentModel.assets))
     .filter(Boolean);
   if (!targets.length) return { transform, guides: null };
@@ -459,6 +513,56 @@ function canvasHandle(item, screen) {
   return null;
 }
 
+function screenBoundsForItem(item) {
+  const bounds = worldBounds(item, documentModel.assets);
+  if (!bounds) return null;
+  const first = renderer.toScreen(bounds.left, bounds.top, camera);
+  const second = renderer.toScreen(bounds.right, bounds.bottom, camera);
+  return {
+    left: Math.min(first.x, second.x),
+    top: Math.min(first.y, second.y),
+    right: Math.max(first.x, second.x),
+    bottom: Math.max(first.y, second.y)
+  };
+}
+
+function rectFromPoints(first, second) {
+  return {
+    left: Math.min(first.x, second.x),
+    top: Math.min(first.y, second.y),
+    right: Math.max(first.x, second.x),
+    bottom: Math.max(first.y, second.y)
+  };
+}
+
+function idsInSelectionRect(rect) {
+  return documentModel.items.filter((item) => {
+    const bounds = screenBoundsForItem(item);
+    return bounds && bounds.left <= rect.right && bounds.right >= rect.left
+      && bounds.top <= rect.bottom && bounds.bottom >= rect.top;
+  }).map((item) => item.id);
+}
+
+function commitMarqueeSelection(finished) {
+  if (!finished.moved || !selectionRect) {
+    if (finished.mode === 'replace') setSelection(null, null, null, true);
+    return;
+  }
+  const hits = idsInSelectionRect(selectionRect);
+  const next = new Set(finished.baseIds);
+  if (finished.mode === 'replace') {
+    setMultipleSelection(hits, hits.at(-1) || null, true);
+  } else if (finished.mode === 'add') {
+    for (const id of hits) next.add(id);
+    setMultipleSelection([...next], hits.at(-1) || finished.primaryId, true);
+  } else {
+    for (const id of hits) {
+      if (next.has(id)) next.delete(id); else next.add(id);
+    }
+    setMultipleSelection([...next], hits.at(-1) || finished.primaryId, true);
+  }
+}
+
 function transformAtPointer(item, kind, start, screen) {
   const world = renderer.toWorld(screen.x, screen.y, camera);
   const original = start.transform;
@@ -484,7 +588,14 @@ function onPointerDown(event) {
   pointerMap.set(event.pointerId, screen);
   try { canvas.setPointerCapture(event.pointerId); } catch { /* input may lose capture on window changes */ }
   if (pointerMap.size >= 2) {
-    if (gesture?.type === 'move' || gesture?.type === 'resize' || gesture?.type === 'rotate') transformDraft = null;
+    if (gesture?.type === 'move' || gesture?.type === 'multi-move' || gesture?.type === 'resize' || gesture?.type === 'rotate') {
+      transformDraft = null;
+      multiTransformDraft.clear();
+    }
+    if (gesture?.type === 'marquee') {
+      selectionRect = null;
+      canvas.classList.remove('selecting');
+    }
     if (gesture?.type === 'align-move' && alignDraft) alignDraft.transform = { ...alignDraft.initialTransform };
     snapGuides = null;
     canvas.classList.remove('dragging');
@@ -519,7 +630,8 @@ function onPointerDown(event) {
   }
 
   const selected = selectedId ? findRoot(documentModel, selectedId) : null;
-  const handle = selected && selectedId === selected.id ? canvasHandle(selected, screen) : null;
+  const modifiedSelection = event.shiftKey || event.ctrlKey || event.metaKey;
+  const handle = !modifiedSelection && selectedIds.size === 1 && selected && selectedId === selected.id ? canvasHandle(selected, screen) : null;
   if (handle) {
     const world = renderer.toWorld(screen.x, screen.y, camera);
     const center = rootVisualCenter(selected, documentModel.assets);
@@ -529,12 +641,34 @@ function onPointerDown(event) {
   }
 
   if (hit) {
-    setSelection(hit.rootId, hit.childId, hit.childId === hit.rootId ? null : hit.rootId, true);
+    if (modifiedSelection) {
+      const next = new Set(selectedIds);
+      if (event.ctrlKey || event.metaKey) {
+        if (next.has(hit.rootId)) next.delete(hit.rootId); else next.add(hit.rootId);
+      } else next.add(hit.rootId);
+      setMultipleSelection([...next], hit.rootId, true);
+      gesture = { type: 'select-click', start: screen, moved: false };
+      event.preventDefault();
+      return;
+    }
+    layerRangeAnchor = hit.rootId;
+    if (selectedIds.size > 1 && selectedIds.has(hit.rootId)) setMultipleSelection([...selectedIds], hit.rootId, true);
+    else setSelection(hit.rootId, hit.childId, hit.childId === hit.rootId ? null : hit.rootId, true);
     const item = findRoot(documentModel, hit.rootId);
-    if (item) gesture = { type: 'move', id: item.id, start: screen, transform: currentRootTransform(item), moved: false };
+    if (item && selectedIds.size > 1) {
+      gesture = {
+        type: 'multi-move', ids: [...selectedIds], primaryId: item.id, start: screen,
+        transforms: new Map([...selectedIds].map((id) => [id, currentRootTransform(findRoot(documentModel, id))])), moved: false
+      };
+    } else if (item) gesture = { type: 'move', id: item.id, start: screen, transform: currentRootTransform(item), moved: false };
   } else {
-    setSelection(null, null, null, true);
-    gesture = { type: 'pan', start: screen, camera: { ...camera }, last: screen, moved: false };
+    selectionRect = null;
+    canvas.classList.add('selecting');
+    gesture = {
+      type: 'marquee', start: screen,
+      mode: event.ctrlKey || event.metaKey ? 'toggle' : event.shiftKey ? 'add' : 'replace',
+      baseIds: [...selectedIds], primaryId: selectedId, moved: false
+    };
   }
 }
 
@@ -558,7 +692,9 @@ function onPointerMove(event) {
   const dx = screen.x - gesture.start.x, dy = screen.y - gesture.start.y;
   if (Math.hypot(dx, dy) > 2) gesture.moved = true;
   snapGuides = null;
-  if (gesture.type === 'pan') {
+  if (gesture.type === 'marquee') {
+    selectionRect = rectFromPoints(gesture.start, screen);
+  } else if (gesture.type === 'pan') {
     camera.x = gesture.camera.x - dx / camera.zoom;
     camera.y = gesture.camera.y - dy / camera.zoom;
   } else if (gesture.type === 'move') {
@@ -567,6 +703,20 @@ function onPointerMove(event) {
       const moved = { x: gesture.transform.x + dx / camera.zoom, y: gesture.transform.y + dy / camera.zoom, scale: gesture.transform.scale, rotation: gesture.transform.rotation };
       const snapped = snapTransformToImages(item, moved);
       transformDraft = { id: gesture.id, transform: snapped.transform };
+      snapGuides = snapped.guides;
+    }
+  } else if (gesture.type === 'multi-move') {
+    const primary = findRoot(documentModel, gesture.primaryId);
+    const base = gesture.transforms.get(gesture.primaryId);
+    if (primary && base) {
+      const moved = { ...base, x: base.x + dx / camera.zoom, y: base.y + dy / camera.zoom };
+      const snapped = snapTransformToImages(primary, moved, new Set(gesture.ids));
+      const deltaX = snapped.transform.x - base.x;
+      const deltaY = snapped.transform.y - base.y;
+      multiTransformDraft = new Map(gesture.ids.map((id) => {
+        const transform = gesture.transforms.get(id);
+        return [id, { ...transform, x: transform.x + deltaX, y: transform.y + deltaY }];
+      }));
       snapGuides = snapped.guides;
     }
   } else if (gesture.type === 'align-move') {
@@ -592,12 +742,26 @@ function finishPointer(cancel = false) {
   gesture = null;
   pointerMap.clear();
   canvas.classList.remove('dragging');
+  canvas.classList.remove('selecting');
   if (finished.type === 'move' || finished.type === 'resize' || finished.type === 'rotate') {
     if (!cancel && finished.moved && transformDraft?.id === finished.id) {
       transformItemCommand(documentModel, finished.id, transformDraft.transform);
       transformDraft = null;
       markChanged(true);
     } else { transformDraft = null; refresh(); }
+  } else if (finished.type === 'multi-move') {
+    if (!cancel && finished.moved && multiTransformDraft.size) {
+      for (const [id, transform] of multiTransformDraft) transformItemCommand(documentModel, id, transform);
+      multiTransformDraft.clear();
+      markChanged(true);
+    } else {
+      multiTransformDraft.clear();
+      refresh();
+    }
+  } else if (finished.type === 'marquee') {
+    if (!cancel) commitMarqueeSelection(finished);
+    selectionRect = null;
+    refresh();
   } else if (finished.type === 'align-move') {
     if (cancel) alignDraft.transform = { ...alignDraft.initialTransform };
     refresh();
@@ -653,7 +817,7 @@ function finishAlignmentMerge() {
     return;
   }
   alignDraft = null;
-  ({ selectedId, layerFocusId, layerFocusParent } = result.selection);
+  adoptSelection(result.selection);
   pruneAssets();
   markChanged(true);
   setStatus('수동 정렬한 이미지를 그룹에 병합했습니다', 'normal');
@@ -664,24 +828,46 @@ function keepAlignmentSeparate() {
   const result = keepAlignmentCommand(documentModel, alignDraft.id, alignDraft.transform);
   if (!result.changed) return closeAlignment();
   alignDraft = null;
-  ({ selectedId, layerFocusId, layerFocusParent } = result.selection);
+  adoptSelection(result.selection);
   markChanged(true);
   setStatus('이미지를 개별 항목으로 유지했습니다', 'normal');
 }
 
 function deleteSelection() {
   finishLayoutTransition();
-  if (!selectedId || alignDraft) return;
+  if (!selectedIds.size || alignDraft) return;
+  if (selectedIds.size > 1) {
+    const result = deleteLayersCommand(documentModel, [...selectedIds]);
+    if (!result.changed) return;
+    adoptSelection(result.selection);
+    expandedGroups = new Set([...expandedGroups].filter((id) => Boolean(findRoot(documentModel, id))));
+    pruneAssets();
+    markChanged(true);
+    return;
+  }
   const result = deleteLayerCommand(documentModel, { selectedId, layerFocusId, layerFocusParent });
   if (!result.changed) return;
-  ({ selectedId, layerFocusId, layerFocusParent } = result.selection);
+  adoptSelection(result.selection);
   expandedGroups = new Set([...expandedGroups].filter((id) => Boolean(findRoot(documentModel, id))));
   pruneAssets();
   markChanged(true);
 }
 
+function groupSelection() {
+  finishLayoutTransition();
+  if (selectedIds.size < 2 || alignDraft) return;
+  const count = selectedIds.size;
+  const result = groupLayersCommand(documentModel, [...selectedIds]);
+  if (!result.changed) return;
+  adoptSelection(result.selection);
+  expandedGroups.add(result.groupId);
+  markChanged(true);
+  setStatus(`${count}개 레이어를 그룹화했습니다`, 'normal');
+}
+
 function resetTransform() {
   finishLayoutTransition();
+  if (selectedIds.size !== 1) return;
   const item = selectedId && findRoot(documentModel, selectedId);
   if (!item || alignDraft) return;
   const result = transformItemCommand(documentModel, item.id, { x: item.x, y: item.y, scale: 1, rotation: 0 });
@@ -690,6 +876,7 @@ function resetTransform() {
 
 function adjustSelectionTransform(scaleFactor = 1, rotationDelta = 0) {
   finishLayoutTransition();
+  if (selectedIds.size !== 1) return false;
   const item = selectedId && findRoot(documentModel, selectedId);
   if (!item || alignDraft) return false;
   const scale = Math.max(0.05, Math.min(16, (item.scale || 1) * scaleFactor));
@@ -707,7 +894,7 @@ function ungroupSelection() {
   if (!item || item.type !== 'group') return;
   const result = ungroupCommand(documentModel, item.id);
   if (!result.changed) return;
-  ({ selectedId, layerFocusId, layerFocusParent } = result.selection);
+  adoptSelection(result.selection);
   expandedGroups.delete(item.id);
   markChanged(true);
 }
@@ -716,6 +903,15 @@ function nudgeSelection(dx, dy) {
   finishLayoutTransition();
   if (alignDraft) {
     alignDraft.transform.x += dx; alignDraft.transform.y += dy; refresh(); return;
+  }
+  if (selectedIds.size > 1) {
+    let changed = false;
+    for (const id of selectedIds) {
+      const item = findRoot(documentModel, id);
+      if (item && moveItemCommand(documentModel, item.id, item.x + dx, item.y + dy).changed) changed = true;
+    }
+    if (changed) markChanged(true);
+    return;
   }
   const item = selectedId && findRoot(documentModel, selectedId);
   if (!item) return;
@@ -748,7 +944,7 @@ function onPaste(event) {
   const files = candidates.map((file, index) => pastedImageFile(file, index, timestamp)).filter(Boolean);
   if (!files.length) return;
   event.preventDefault();
-  enqueueFiles(files);
+  enqueueFiles(files, false, true);
 }
 
 function setExportMenu(open) {
@@ -783,11 +979,11 @@ function setProcessing(title, detail) {
   updateEmptyState();
 }
 
-function enqueueFiles(files, sample = false) {
+function enqueueFiles(files, sample = false, compareExisting = false) {
   if (!files.length) return;
   const captured = [...files];
   importsPending++;
-  importQueue = importQueue.then(() => processFiles(captured, sample)).catch((error) => {
+  importQueue = importQueue.then(() => processFiles(captured, sample, compareExisting)).catch((error) => {
     pendingImages = [];
     processingCard.classList.add('hidden');
     refresh();
@@ -821,7 +1017,79 @@ async function loadSampleBitmap(path) {
   } finally { URL.revokeObjectURL(sourceUrl); }
 }
 
-async function processFiles(files, isSample = false) {
+function existingStitchSources() {
+  const sources = [];
+  for (const root of documentModel.items) {
+    const images = root.type === 'group' ? root.children : [root];
+    for (const image of images) {
+      const metadata = documentModel.assets[image.assetId];
+      const asset = assets.get(image.assetId);
+      if (!metadata || !asset?.blob) continue;
+      const matrix = root.type === 'group'
+        ? multiply(composeTransform(root), composeTransform(image))
+        : composeTransform(image);
+      sources.push({
+        assetId: image.assetId,
+        blob: asset.blob,
+        width: metadata.width,
+        height: metadata.height,
+        rootId: root.id,
+        imageId: image.id,
+        matrix
+      });
+    }
+  }
+  return sources;
+}
+
+function pastedImageMatch(result, sources, record) {
+  const edge = result?.matchedEdges?.filter((entry) => entry.assetIdA === record.id || entry.assetIdB === record.id)
+    .sort((left, right) => right.confidence - left.confidence)[0];
+  let source;
+  let dx;
+  let dy;
+  if (edge) {
+    const anchorId = edge.assetIdA === record.id ? edge.assetIdB : edge.assetIdA;
+    source = sources.find((entry) => entry.assetId === anchorId);
+    const direction = edge.assetIdB === record.id ? 1 : -1;
+    dx = edge.dx * direction;
+    dy = edge.dy * direction;
+  } else {
+    const component = result?.components?.find((entries) => entries.some((entry) => entry.assetId === record.id));
+    const pasted = component?.find((entry) => entry.assetId === record.id);
+    const anchor = component?.find((entry) => entry.assetId !== record.id);
+    source = sources.find((entry) => entry.assetId === anchor?.assetId);
+    if (!pasted || !anchor) return null;
+    dx = pasted.x - anchor.x;
+    dy = pasted.y - anchor.y;
+  }
+  if (!source) return null;
+  const matrix = source.matrix;
+  return {
+    targetId: source.rootId,
+    transform: decomposeTransform([
+      matrix[0], matrix[1], matrix[2], matrix[3],
+      matrix[4] + matrix[0] * dx + matrix[2] * dy,
+      matrix[5] + matrix[1] * dx + matrix[3] * dy
+    ])
+  };
+}
+
+async function addPastedImageToExisting(record, match) {
+  let previewUrl;
+  try { previewUrl = await createThumbnailUrl(record.bitmap) || URL.createObjectURL(record.blob); }
+  catch { previewUrl = URL.createObjectURL(record.blob); }
+  const applied = addPastedImageToTargetCommand(documentModel, record, match.targetId, match.transform);
+  if (!applied.changed) {
+    URL.revokeObjectURL(previewUrl);
+    throw new Error('기존 레이어에 이미지를 스티칭하지 못했습니다.');
+  }
+  assets.set(record.id, { blob: record.blob, bitmap: record.bitmap, previewUrl });
+  adoptSelection(applied.selection);
+  return applied;
+}
+
+async function processFiles(files, isSample = false, compareExisting = false) {
   finishLayoutTransition();
   processingHidden = false;
   pendingImages = [];
@@ -855,33 +1123,48 @@ async function processFiles(files, isSample = false) {
     const records = results.map((image) => ({ id: newId(), ...image }));
     pendingImages = records;
     refresh();
-    const pairs = records.length * (records.length - 1) / 2;
-    setProcessing('이미지 겹침 탐색 중', pairs ? `${pairs.toLocaleString()}개 이미지 쌍을 실제 픽셀로 비교합니다` : '비교할 이미지 쌍이 없어 개별 이미지로 추가합니다');
+    const existingSources = compareExisting && records.length === 1 ? existingStitchSources() : [];
+    const externalPairs = existingSources.map((_, index) => [index, existingSources.length]);
+    const pairCount = externalPairs.length || records.length * (records.length - 1) / 2;
+    setProcessing(existingSources.length ? '기존 레이어와 겹침 탐색 중' : '이미지 겹침 탐색 중', pairCount
+      ? `${pairCount.toLocaleString()}개 이미지 쌍을 실제 픽셀로 비교합니다`
+      : '비교할 이미지 쌍이 없어 개별 이미지로 추가합니다');
     let engineResult = null;
     let engineError = null;
-    if (records.length > 1) {
+    if (existingSources.length || records.length > 1) {
       try {
-        engineResult = await stitching.run(records.map(({ id, blob, width, height }) => ({ assetId: id, blob, width, height })), (progress) => {
+        const incomingImages = records.map(({ id, blob, width, height }) => ({ assetId: id, blob, width, height }));
+        const stitchImages = existingSources.length
+          ? [...existingSources.map(({ assetId, blob, width, height }) => ({ assetId, blob, width, height })), ...incomingImages]
+          : incomingImages;
+        engineResult = await stitching.run(stitchImages, (progress) => {
           if (progress.phase === 'read') setProcessing('이미지 읽는 중', `${progress.completed} / ${progress.total}개`);
           if (progress.phase === 'match') setProcessing('겹침 탐색 중', `${progress.completed.toLocaleString()} / ${progress.total.toLocaleString()}개 이미지 쌍 · 연결 ${progress.matchedPairs}개`);
           if (progress.phase === 'layout') setProcessing('경계 정렬 중', '연결된 이미지의 상대 위치를 계산하고 있습니다');
-        });
+        }, existingSources.length ? { candidatePairs: externalPairs } : undefined);
       } catch (error) { engineError = error; }
     }
     setProcessing('스티칭 결과 반영 중', '원본 파일과 작업 상태를 준비하고 있습니다');
     const cameraBeforeLayout = { ...camera };
-    const applied = await addDecodedImages(records, engineResult, engineError);
+    const pasteMatch = existingSources.length && records.length === 1 && !engineError
+      ? pastedImageMatch(engineResult, existingSources, records[0])
+      : null;
+    const applied = pasteMatch
+      ? await addPastedImageToExisting(records[0], pasteMatch)
+      : await addDecodedImages(records, existingSources.length ? null : engineResult, engineError);
     retained = true;
     pendingImages = [];
     processingCard.classList.add('hidden');
     processingHidden = false;
     refresh();
-    animateImportLayout(records, engineResult?.components, applied.rootIds, cameraBeforeLayout);
+    if (!pasteMatch) animateImportLayout(records, existingSources.length ? null : engineResult?.components, applied.rootIds, cameraBeforeLayout);
     markChanged(true);
     const groups = records.length > 1 && engineResult ? engineResult.components.filter((component) => component.length > 1).length : 0;
     const matchedCount = engineResult?.components.filter((component) => component.length > 1).reduce((count, component) => count + component.length, 0) || 0;
     const unmatched = records.length > 1 && engineResult ? records.length - matchedCount : 0;
-    const summary = `${records.length}개 이미지를 추가했습니다 · 스티칭 그룹 ${groups}개${unmatched ? ` · 정렬 필요 ${unmatched}개` : ''}`;
+    const summary = pasteMatch
+      ? '붙여넣은 이미지를 기존 레이어에 스티칭했습니다'
+      : `${records.length}개 이미지를 추가했습니다 · 스티칭 그룹 ${groups}개${unmatched ? ` · 정렬 필요 ${unmatched}개` : ''}`;
     setStatus(summary, engineError ? 'warning' : 'normal');
     showToast(engineError ? `${summary}. 자동 스티칭은 실패했지만 읽은 원본은 개별 이미지로 보관했습니다.` : summary, engineError || unmatched ? 'warning' : 'normal', 7600);
     if (engineError) showToast(`스티칭 엔진 오류: ${engineError.message}`, 'error', 0);
@@ -910,7 +1193,7 @@ async function addDecodedImages(records, result, engineError) {
   for (const [index, image] of records.entries()) {
     assets.set(image.id, { blob: image.blob, bitmap: image.bitmap, previewUrl: previewUrls[index] });
   }
-  ({ selectedId, layerFocusId, layerFocusParent } = applied.selection);
+  adoptSelection(applied.selection);
   return applied;
 }
 
@@ -977,7 +1260,7 @@ function onKeyDown(event) {
   if (key === 'f') { fitAll(); event.preventDefault(); return; }
   if (key === '[') { moveFocusedLayer(-1); event.preventDefault(); return; }
   if (key === ']') { moveFocusedLayer(1); event.preventDefault(); return; }
-  if ((key === 'delete' || key === 'backspace') && selectedId) { deleteSelection(); event.preventDefault(); return; }
+  if ((key === 'delete' || key === 'backspace') && selectedIds.size) { deleteSelection(); event.preventDefault(); return; }
   if (key.startsWith('arrow')) {
     const amount = event.shiftKey ? 10 : 1;
     const map = { arrowup: [0, -amount], arrowdown: [0, amount], arrowleft: [-amount, 0], arrowright: [amount, 0] };
@@ -996,6 +1279,8 @@ function registerEvents() {
   byId('zoom-label').addEventListener('click', () => { camera.zoom = 1; markChanged(false); });
   byId('fit-all').addEventListener('click', fitAll);
   byId('toolbar-ungroup').addEventListener('click', ungroupSelection);
+  byId('toolbar-group').addEventListener('click', groupSelection);
+  byId('selection-group').addEventListener('click', groupSelection);
   byId('toolbar-delete').addEventListener('click', deleteSelection);
   byId('layers-toggle').addEventListener('click', () => togglePanel());
   byId('align-button').addEventListener('click', startAlignment);
@@ -1092,6 +1377,8 @@ async function restore() {
     panelOpen = restoredView.panelOpen;
     expandedGroups = new Set(restoredView.expandedGroups);
     selectedId = restoredView.selectedId;
+    selectedIds = new Set(restoredView.selectedIds);
+    layerRangeAnchor = selectedId;
     layerFocusId = restoredView.layerFocusId;
     layerFocusParent = restoredView.layerFocusParent;
     stateRevision = Number.isSafeInteger(record.stateRevision) ? record.stateRevision : documentModel.revision;

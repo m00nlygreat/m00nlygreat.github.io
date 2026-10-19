@@ -1,4 +1,4 @@
-import { allBounds, composeTransform, hitTest, multiply, worldBounds } from '../domain/geometry.js';
+import { allBounds, composeTransform, decomposeTransform, hitTest, multiply, worldBounds } from '../domain/geometry.js';
 import { interpolateTransform } from './transition.js';
 
 const GRID_SIZE = 24;
@@ -35,7 +35,8 @@ export class CanvasRenderer {
   }
 
   draw(state) {
-    const { document: doc, metadata, camera, selectedId, pending = [], alignDraft, transformDraft, layoutTransition, snapGuides } = state;
+    const { document: doc, metadata, camera, selectedId, selectedIds, pending = [], alignDraft, transformDraft, multiTransformDraft, selectionRect, layoutTransition, snapGuides } = state;
+    const selectedSet = selectedIds instanceof Set ? selectedIds : new Set(selectedId ? [selectedId] : []);
     this.currentCamera = camera;
     const context = this.context;
     const dpr = this.dpr;
@@ -60,6 +61,8 @@ export class CanvasRenderer {
       const transitionTransform = transition ? interpolateTransform(transition.from, transition.to, layoutTransition.progress) : null;
       const override = item.id === alignDraft?.id ? alignDraft.transform
         : item.id === transformDraft?.id ? transformDraft.transform
+          : multiTransformDraft?.get(item.id)
+            ? multiTransformDraft.get(item.id)
           : transitionTransform;
       this.drawItem(context, item, metadata, override, transition, layoutTransition?.progress || 0);
     }
@@ -77,13 +80,16 @@ export class CanvasRenderer {
       context.restore();
     }
     this.drawSnapGuides(context, snapGuides, camera);
-    const selected = doc.items.find((item) => item.id === selectedId);
-    const selectedTransition = selected && layoutTransition?.items.get(selected.id);
-    const selectedTransitionTransform = selectedTransition ? interpolateTransform(selectedTransition.from, selectedTransition.to, layoutTransition.progress) : null;
-    const selectedOverride = selected && transformDraft?.id === selected.id ? transformDraft.transform
-      : selected && alignDraft?.id === selected.id ? alignDraft.transform
-        : selectedTransitionTransform;
-    if (selected) this.drawSelection(context, this.withTransition(selected, selectedTransition, layoutTransition?.progress || 0, selectedOverride), metadata, camera);
+    for (const selected of doc.items.filter((item) => selectedSet.has(item.id))) {
+      const selectedTransition = layoutTransition?.items.get(selected.id);
+      const selectedTransitionTransform = selectedTransition ? interpolateTransform(selectedTransition.from, selectedTransition.to, layoutTransition.progress) : null;
+      const selectedOverride = selected.id === transformDraft?.id ? transformDraft.transform
+        : selected.id === alignDraft?.id ? alignDraft.transform
+          : multiTransformDraft?.get(selected.id) || selectedTransitionTransform;
+      const selectedItem = this.withTransition(selected, selectedTransition, layoutTransition?.progress || 0, selectedOverride);
+      this.drawSelection(context, selectedItem, metadata, camera, selectedSet.size === 1 && selected.id === selectedId);
+    }
+    if (selectionRect) this.drawSelectionRect(context, selectionRect);
     const alignItem = doc.items.find((item) => item.id === alignDraft?.id);
     if (alignItem) this.drawAlignmentBadge(context, worldBounds({ ...alignItem, ...alignDraft.transform }, metadata), camera);
     if (!alignDraft && layoutTransition) {
@@ -126,6 +132,14 @@ export class CanvasRenderer {
       context.beginPath(); context.arc(screen.x + 13, screen.y + 13, 6, 0, Math.PI * 2); context.fill();
       context.restore();
     }
+    if (item.type === 'group') {
+      for (const child of visibleItem.children) {
+        if (!child.needsAlignment) continue;
+        const childTransform = decomposeTransform(multiply(matrix, composeTransform(child)));
+        const childBounds = worldBounds({ type: 'image', ...child, ...childTransform }, metadata);
+        this.drawAlignmentBadge(context, childBounds, this.currentCamera);
+      }
+    }
   }
 
   drawImage(context, image, metadata, bitmap, parentMatrix) {
@@ -139,7 +153,7 @@ export class CanvasRenderer {
     context.restore();
   }
 
-  drawSelection(context, item, metadata, camera) {
+  drawSelection(context, item, metadata, camera, showHandles = true) {
     const bounds = worldBounds(item, metadata);
     if (!bounds) return;
     const topLeft = this.toScreen(bounds.left, bounds.top, camera);
@@ -154,14 +168,32 @@ export class CanvasRenderer {
     context.lineWidth = 1.5;
     context.setLineDash([]);
     context.strokeRect(x, y, width, height);
-    const handles = [[x, y], [x + width, y], [x + width, y + height], [x, y + height]];
-    for (const [hx, hy] of handles) {
-      context.fillStyle = handleFill; context.strokeStyle = selectionColor; context.lineWidth = forcedColors ? 2 : 1.5;
-      context.beginPath(); context.rect(hx - 4, hy - 4, 8, 8); context.fill(); context.stroke();
+    if (showHandles) {
+      const handles = [[x, y], [x + width, y], [x + width, y + height], [x, y + height]];
+      for (const [hx, hy] of handles) {
+        context.fillStyle = handleFill; context.strokeStyle = selectionColor; context.lineWidth = forcedColors ? 2 : 1.5;
+        context.beginPath(); context.rect(hx - 4, hy - 4, 8, 8); context.fill(); context.stroke();
+      }
+      const rotationX = x + width / 2, rotationY = y - 23;
+      context.strokeStyle = selectionColor; context.beginPath(); context.moveTo(rotationX, y); context.lineTo(rotationX, rotationY); context.stroke();
+      context.fillStyle = handleFill; context.beginPath(); context.arc(rotationX, rotationY, 5, 0, Math.PI * 2); context.fill(); context.stroke();
     }
-    const rotationX = x + width / 2, rotationY = y - 23;
-    context.strokeStyle = selectionColor; context.beginPath(); context.moveTo(rotationX, y); context.lineTo(rotationX, rotationY); context.stroke();
-    context.fillStyle = handleFill; context.beginPath(); context.arc(rotationX, rotationY, 5, 0, Math.PI * 2); context.fill(); context.stroke();
+    context.restore();
+  }
+
+  drawSelectionRect(context, rect) {
+    const left = Math.min(rect.left, rect.right);
+    const top = Math.min(rect.top, rect.bottom);
+    const width = Math.abs(rect.right - rect.left);
+    const height = Math.abs(rect.bottom - rect.top);
+    context.save();
+    context.setTransform(this.dpr, 0, 0, this.dpr, 0, 0);
+    context.fillStyle = globalThis.matchMedia?.('(forced-colors: active)').matches ? 'Highlight' : 'rgb(91 157 255 / 12%)';
+    context.strokeStyle = globalThis.matchMedia?.('(forced-colors: active)').matches ? 'Highlight' : '#5b9dff';
+    context.lineWidth = 1;
+    context.setLineDash([5, 4]);
+    context.fillRect(left, top, width, height);
+    context.strokeRect(left, top, width, height);
     context.restore();
   }
 

@@ -59,6 +59,38 @@ export function groupFromStitch(doc, members, name = null) {
     y: members[0].originY || 0, scale: 1, rotation: 0, children };
 }
 
+export function groupItems(doc, ids) {
+  const selectedIds = new Set(ids);
+  if (selectedIds.size < 2 || [...selectedIds].some((id) => !findRoot(doc, id))) return null;
+  const selected = doc.items.filter((item) => selectedIds.has(item.id));
+  if (selected.length !== selectedIds.size) return null;
+
+  const children = [];
+  for (const item of selected) {
+    if (item.type === 'group') {
+      const parentMatrix = composeTransform(item);
+      for (const child of item.children) {
+        children.push({
+          ...child,
+          ...decomposeTransform(multiply(parentMatrix, composeTransform(child)))
+        });
+      }
+    } else {
+      children.push({ ...item, ...decomposeTransform(composeTransform(item)) });
+    }
+  }
+
+  const firstIndex = doc.items.findIndex((item) => selectedIds.has(item.id));
+  const number = doc.nextGroupNumber++;
+  const group = {
+    type: 'group', id: newId(), name: `그룹 ${number}`,
+    x: 0, y: 0, scale: 1, rotation: 0, children
+  };
+  doc.items = doc.items.filter((item) => !selectedIds.has(item.id));
+  doc.items.splice(firstIndex, 0, group);
+  return group;
+}
+
 export function mergeImageIntoTarget(doc, sourceId, targetId) {
   const sourceIndex = doc.items.findIndex((item) => item.id === sourceId && item.type === 'image');
   const targetIndex = doc.items.findIndex((item) => item.id === targetId);
@@ -81,6 +113,25 @@ export function mergeImageIntoTarget(doc, sourceId, targetId) {
   doc.items = doc.items.filter((item) => item.id !== sourceId && item.id !== targetId);
   doc.items.splice(insertion, 0, group);
   return group.id;
+}
+
+export function addPastedImageToTarget(doc, record, targetId, transform) {
+  const target = findRoot(doc, targetId);
+  if (!target || doc.assets[record.id]) return null;
+  const source = makeImage({
+    assetId: record.id,
+    name: record.name,
+    x: transform.x,
+    y: transform.y
+  });
+  source.scale = transform.scale;
+  source.rotation = transform.rotation;
+  doc.assets = {
+    ...doc.assets,
+    [record.id]: { id: record.id, name: record.name, mime: record.mime, width: record.width, height: record.height }
+  };
+  doc.items.push(source);
+  return mergeImageIntoTarget(doc, source.id, target.id);
 }
 
 export function ungroup(doc, groupId) {

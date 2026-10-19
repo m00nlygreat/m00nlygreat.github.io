@@ -36,7 +36,7 @@
               <span></span><span></span><span></span>
             </div>
             <h1>겹치는 이미지를 가져오세요</h1>
-            <p>이미지를 붙여넣거나 가져오세요. 겹치는 부분은 자동으로 정렬합니다.</p>
+            <p>이미지를 붙여넣거나 가져오세요. 기존 레이어와 겹치면 이어 붙입니다.</p>
             <div class="empty-actions">
               <button id="empty-import" class="primary-button" type="button">이미지 가져오기</button>
               <button id="sample-button" class="secondary-button" type="button">샘플 체험</button>
@@ -69,6 +69,7 @@
         <div class="selection-summary"><strong id="selection-name">선택 항목</strong><span id="selection-meta"></span></div>
         <div class="selection-values"><span>X <b id="value-x">0</b></span><span>Y <b id="value-y">0</b></span><span>크기 <b id="value-scale">100%</b></span><span>회전 <b id="value-rotation">0°</b></span></div>
         <div class="selection-actions">
+          <button id="selection-group" class="secondary-button compact hidden" type="button">그룹화</button>
           <button id="align-button" class="secondary-button compact" type="button">수동 정렬</button>
           <button id="reset-transform" class="secondary-button compact" type="button">변형 초기화</button>
         </div>
@@ -86,6 +87,7 @@
           <button id="zoom-in" class="tool-button" type="button" aria-label="확대" title="확대 (Ctrl +)"><svg aria-hidden="true" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round"><path d="M12 6v12M6 12h12"></path></svg></button>
           <button id="fit-all" class="tool-button" type="button" aria-label="전체 보기 (Ctrl 0)" title="전체 보기 (Ctrl 0)"><svg aria-hidden="true" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M4 9V5a1 1 0 0 1 1-1h4M20 9V5a1 1 0 0 0-1-1h-4M4 15v4a1 1 0 0 0 1 1h4M20 15v4a1 1 0 0 1-1 1h-4"></path></svg></button>
           <span class="tool-divider"></span>
+          <button id="toolbar-group" class="tool-button" type="button" aria-label="선택 항목 그룹화" title="선택 항목 그룹화" disabled><svg aria-hidden="true" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linejoin="round"><rect x="3" y="6" width="12" height="12" rx="2"></rect><rect x="9" y="2" width="12" height="12" rx="2"></rect><path d="M9 18v2a2 2 0 0 0 2 2h9a2 2 0 0 0 2-2v-9a2 2 0 0 0-2-2h-1"></path></svg></button>
           <button id="toolbar-ungroup" class="tool-button" type="button" aria-label="그룹 해제" title="그룹 해제" disabled><svg aria-hidden="true" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linejoin="round"><rect x="3" y="3" width="11" height="11" rx="2"></rect><rect x="10" y="10" width="11" height="11" rx="2" stroke-dasharray="3 2.5"></rect></svg></button>
           <button id="toolbar-delete" class="tool-button" type="button" aria-label="선택 항목 삭제" title="삭제 (Del)" disabled><svg aria-hidden="true" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M4 7h16M9.5 7V4.5h5V7M6.5 7l.9 12.1a1 1 0 0 0 1 .9h7.2a1 1 0 0 0 1-.9L17.5 7"></path></svg></button>
         </div>
@@ -114,8 +116,8 @@
       <dialog id="help-dialog" class="help-dialog">
         <form method="dialog">
           <div class="dialog-heading"><h2>Jigsaw 사용 안내</h2><button class="small-icon-button" aria-label="닫기">×</button></div>
-          <p>이미지를 가져오면 겹침을 찾아 자동으로 정렬합니다. 정렬을 확신할 수 없는 이미지는 별도로 남습니다.</p>
-          <dl><dt>이미지 붙여넣기</dt><dd>Ctrl/Cmd + V</dd><dt>캔버스 이동</dt><dd>빈 곳 드래그, Space + 드래그, 또는 H 도구</dd><dt>확대·축소</dt><dd>Ctrl/Cmd + 스크롤 또는 도구 모음</dd><dt>레이어 순서</dt><dd>[ / ] 키 또는 레이어의 앞·뒤 버튼</dd><dt>키보드 이동</dt><dd>방향키 1px, Shift + 방향키 10px</dd><dt>크기 조절</dt><dd>선택 항목에서 + / − 키로 5%씩 조절</dd><dt>회전</dt><dd>Q / E 키로 1°, Shift + Q / E 키로 15° 회전</dd></dl>
+          <p>이미지를 가져오면 겹침을 찾아 자동으로 정렬합니다. 한 장을 붙여넣으면 기존 레이어와도 비교해 맞는 곳에 스티칭합니다.</p>
+          <dl><dt>이미지 붙여넣기</dt><dd>Ctrl/Cmd + V</dd><dt>범위 선택</dt><dd>선택 도구에서 빈 곳을 드래그</dd><dt>다중 선택</dt><dd>Shift/Ctrl/Cmd 클릭 (레이어 목록도 지원)</dd><dt>그룹화</dt><dd>여러 레이어를 선택하고 그룹화 버튼</dd><dt>캔버스 이동</dt><dd>Space + 드래그 또는 H 도구</dd><dt>확대·축소</dt><dd>Ctrl/Cmd + 스크롤 또는 도구 모음</dd><dt>레이어 순서</dt><dd>[ / ] 키 또는 레이어의 앞·뒤 버튼</dd><dt>키보드 이동</dt><dd>방향키 1px, Shift + 방향키 10px</dd><dt>크기 조절</dt><dd>선택 항목에서 + / − 키로 5%씩 조절</dd><dt>회전</dt><dd>Q / E 키로 1°, Shift + Q / E 키로 15° 회전</dd></dl>
           <button class="primary-button dialog-done" type="submit">확인</button>
         </form>
       </dialog>
